@@ -1,5 +1,5 @@
 {
-  description = "Declarative repository composition for Nix";
+  description = "Multi-repo workspace composition for Nix";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -36,6 +36,48 @@
     in
     {
       lib = coreLib;
+
+      packages = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        {
+          default = self.packages.${system}.git-bits;
+
+          git-bits = pkgs.stdenv.mkDerivation {
+            pname = "git-bits";
+            version = "0.1.0";
+            src = ./.;
+
+            nativeBuildInputs = [ pkgs.makeWrapper ];
+
+            installPhase = ''
+              mkdir -p $out/bin $out/lib
+              cp -r nix src $out/lib/
+
+              substitute bin/git-bits $out/bin/git-bits \
+                --replace '@gitbitsLib@' "$out/lib/nix/lib.nix"
+
+              chmod +x $out/bin/git-bits
+
+              wrapProgram $out/bin/git-bits \
+                --prefix PATH : ${
+                  lib.makeBinPath [
+                    pkgs.nix
+                    pkgs.jq
+                    pkgs.git
+                  ]
+                }
+            '';
+
+            meta = {
+              description = "Multi-repo workspace composition";
+              mainProgram = "git-bits";
+            };
+          };
+        }
+      );
 
       checks = forAllSystems (
         system:

@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# git-bits: Multi-repo workspace composition
+# Usage: git bits <command> [args]
+
+GITBITS_DIR=".gitbits"
+CONFIG_FILE=".gitbits.nix"
+
+# Set by wrapper during nix build
+GITBITS_LIB="${GITBITS_LIB:-@gitbitsLib@}"
+
+show_help() {
+  cat <<EOF
+Usage: git bits <command> [args]
+
+Commands:
+  init          Initialize workspace from $CONFIG_FILE
+  status        Show status of all repos
+  pull          Pull updates for all injections
+  push          Push changes to injection remotes
+  use <name>    Output shell commands to switch context (wrap in eval)
+  list          List available contexts
+  help          Show this help
+
+Context switching:
+  eval "\$(git bits use <name>)"   Switch to injection context
+  eval "\$(git bits use main)"     Switch back to main repo
+
+Config file ($CONFIG_FILE):
+  {
+    injections = {
+      my-lib = {
+        remote = "https://github.com/org/lib.git";
+        owns = [ "lib" "tools" ];
+      };
+    };
+  }
+EOF
+}
+
+require_config() {
+  if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "Error: $CONFIG_FILE not found" >&2
+    exit 1
+  fi
+}
+
+require_git() {
+  if [[ ! -d ".git" ]]; then
+    echo "Error: not a git repository" >&2
+    exit 1
+  fi
+}
+
+eval_script() {
+  local script_name="$1"
+  nix-instantiate --eval --strict --json -E "
+    let
+      lib = import <nixpkgs/lib>;
+      gitbits = import $GITBITS_LIB { inherit lib; };
+      config = import ./$CONFIG_FILE;
+    in (gitbits.build config).scripts.$script_name
+  " 2>/dev/null | jq -r '.'
+}
+
+run_script() {
+  local script_name="$1"
+  shift
+  local script
+  script=$(eval_script "$script_name")
+  if [[ -z "$script" ]]; then
+    echo "Error: failed to generate $script_name script" >&2
+    exit 1
+  fi
+  bash -c "$script" -- "$@"
+}
+
+cmd_init() {
+  require_config
+  require_git
+  run_script "init"
+}
+
+cmd_status() {
+  require_config
+  require_git
+  run_script "status"
+}
+
+cmd_pull() {
+  require_config
+  require_git
+  run_script "pull"
+}
+
+cmd_push() {
+  require_config
+  require_git
+  run_script "push"
+}
+
+cmd_use() {
+  require_config
+  local context="${1:-main}"
+  local script
+  script=$(eval_script "use")
+  bash -c "$script" -- "$context"
+}
+
+cmd_list() {
+  require_config
+  local script
+  script=$(eval_script "use")
+  bash -c "$script" -- list
+}
+
+case "${1:-help}" in
+  init)   cmd_init ;;
+  status) cmd_status ;;
+  pull)   cmd_pull ;;
+  push)   cmd_push ;;
+  use)    cmd_use "${2:-}" ;;
+  list)   cmd_list ;;
+  -h|--help|help) show_help ;;
+  *)
+    echo "Unknown command: $1" >&2
+    echo "Run 'git bits help' for usage" >&2
+    exit 1
+    ;;
+esac
