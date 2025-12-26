@@ -1,168 +1,231 @@
 /**
-  Git command generation for subtree and sparse-checkout operations.
+  Git command generation for multi-repo workspace.
 */
 {
   lib,
-  paths,
 }:
 let
-  inherit (builtins)
-    attrNames
-    concatStringsSep
-    ;
-
-  inherit (lib)
-    escapeShellArg
-    flatten
-    ;
-
-  inherit (paths) normalizePath;
+  inherit (lib) escapeShellArg;
 
   /**
-    Generate sparse-checkout patterns for a mixin.
+    Directory where injection git dirs are stored.
+  */
+  gitbitsDir = ".gitbits";
+
+  /**
+    Get the git directory path for an injection.
 
     # Arguments
 
-    - `mixin` (attrset): Mixin configuration
+    - `name` (string): Injection name
 
     # Returns
 
-    List of sparse-checkout pattern strings.
+    Path string like ".gitbits/foo.git"
   */
-  sparsePatterns =
-    mixin:
-    let
-      sources = attrNames (mixin.mappings or { });
-      # For directories, we need to include the directory and all contents
-      toPatterns =
-        src:
-        let
-          normalized = normalizePath src;
-        in
-        [
-          "/${normalized}"
-          "/${normalized}/**"
-        ];
-    in
-    flatten (map toPatterns sources);
+  injectionGitDir = name: "${gitbitsDir}/${name}.git";
 
   /**
-    Generate sparse-checkout file content for a mixin.
+    Generate environment prefix for injection git operations.
 
     # Arguments
 
-    - `mixin` (attrset): Mixin configuration
+    - `name` (string): Injection name
 
     # Returns
 
-    String content for sparse-checkout file.
+    Shell string like "GIT_DIR=.gitbits/foo.git GIT_WORK_TREE=."
   */
-  sparseCheckoutContent = mixin: concatStringsSep "\n" (sparsePatterns mixin) + "\n";
+  gitEnv = name: "GIT_DIR=${escapeShellArg (injectionGitDir name)} GIT_WORK_TREE=.";
 
   /**
-    Generate git remote add command.
+    Generate clone command for an injection.
 
     # Arguments
 
-    - `name` (string): Remote name
-    - `url` (string): Remote URL
+    - `name` (string): Injection name
+    - `injection` (attrset): Injection configuration
 
     # Returns
 
     Shell command string.
   */
-  gitRemoteAdd = name: url: "git remote add ${escapeShellArg name} ${escapeShellArg url}";
+  cloneCmd =
+    name: injection:
+    let
+      remote = injection.remote;
+      branch = injection.branch or "main";
+      gitDir = injectionGitDir name;
+      tmpDir = "${gitbitsDir}/tmp/${name}";
+    in
+    ''
+      git clone \
+        --separate-git-dir=${escapeShellArg gitDir} \
+        --branch=${escapeShellArg branch} \
+        --single-branch \
+        --no-checkout \
+        ${escapeShellArg remote} \
+        ${escapeShellArg tmpDir}
+      rm -rf ${escapeShellArg tmpDir}
+      ${gitEnv name} git config core.worktree "$(pwd)"
+      ${gitEnv name} git config core.excludesFile /dev/null
+    '';
 
   /**
-    Generate git fetch command for a mixin.
+    Generate sparse-checkout setup commands.
 
     # Arguments
 
-    - `name` (string): Remote/mixin name
-    - `mixin` (attrset): Mixin configuration
+    - `name` (string): Injection name
+    - `sparseContent` (string): Sparse checkout file content
 
     # Returns
 
     Shell command string.
   */
-  gitFetch =
-    name: mixin:
+  sparseCheckoutSetup =
+    name: sparseContent:
     let
-      branch = mixin.branch or "main";
+      gitDir = injectionGitDir name;
     in
-    "git fetch ${escapeShellArg name} ${escapeShellArg branch}";
+    ''
+      ${gitEnv name} git config core.sparseCheckout true
+      mkdir -p ${escapeShellArg gitDir}/info
+      cat > ${escapeShellArg gitDir}/info/sparse-checkout << 'SPARSE_EOF'
+      ${sparseContent}
+      SPARSE_EOF
+      ${gitEnv name} git checkout
+    '';
 
   /**
-    Generate git subtree add command.
+    Generate fetch command for an injection.
 
     # Arguments
 
-    - `name` (string): Remote name
-    - `mixin` (attrset): Mixin configuration
-    - `prefix` (string): Subtree prefix path
+    - `name` (string): Injection name
+    - `injection` (attrset): Injection configuration
 
     # Returns
 
     Shell command string.
   */
-  gitSubtreeAdd =
-    name: mixin: prefix:
-    let
-      branch = mixin.branch or "main";
-      squash = if mixin.squash or true then "--squash " else "";
-    in
-    "git subtree add --prefix=${escapeShellArg prefix} ${squash}${escapeShellArg name} ${escapeShellArg branch}";
+  fetchCmd =
+    name: injection: "${gitEnv name} git fetch origin ${escapeShellArg (injection.branch or "main")}";
 
   /**
-    Generate git subtree pull command.
+    Generate pull command for an injection.
 
     # Arguments
 
-    - `name` (string): Remote name
-    - `mixin` (attrset): Mixin configuration
-    - `prefix` (string): Subtree prefix path
+    - `name` (string): Injection name
+    - `injection` (attrset): Injection configuration
 
     # Returns
 
     Shell command string.
   */
-  gitSubtreePull =
-    name: mixin: prefix:
-    let
-      branch = mixin.branch or "main";
-      squash = if mixin.squash or true then "--squash " else "";
-    in
-    "git subtree pull --prefix=${escapeShellArg prefix} ${squash}${escapeShellArg name} ${escapeShellArg branch}";
+  pullCmd =
+    name: injection: "${gitEnv name} git pull origin ${escapeShellArg (injection.branch or "main")}";
 
   /**
-    Generate git subtree push command.
+    Generate push command for an injection.
 
     # Arguments
 
-    - `name` (string): Remote name
-    - `mixin` (attrset): Mixin configuration
-    - `prefix` (string): Subtree prefix path
+    - `name` (string): Injection name
+    - `injection` (attrset): Injection configuration
 
     # Returns
 
     Shell command string.
   */
-  gitSubtreePush =
-    name: mixin: prefix:
-    let
-      branch = mixin.branch or "main";
-    in
-    "git subtree push --prefix=${escapeShellArg prefix} ${escapeShellArg name} ${escapeShellArg branch}";
+  pushCmd =
+    name: injection: "${gitEnv name} git push origin ${escapeShellArg (injection.branch or "main")}";
+
+  /**
+    Generate status command for an injection.
+
+    # Arguments
+
+    - `name` (string): Injection name
+
+    # Returns
+
+    Shell command string.
+  */
+  statusCmd = name: "${gitEnv name} git status";
+
+  /**
+    Generate diff command for an injection.
+
+    # Arguments
+
+    - `name` (string): Injection name
+
+    # Returns
+
+    Shell command string.
+  */
+  diffCmd = name: "${gitEnv name} git diff";
+
+  /**
+    Generate add command for an injection.
+
+    # Arguments
+
+    - `name` (string): Injection name
+    - `paths` (list): Paths to add
+
+    # Returns
+
+    Shell command string.
+  */
+  addCmd =
+    name: paths: "${gitEnv name} git add ${builtins.concatStringsSep " " (map escapeShellArg paths)}";
+
+  /**
+    Generate commit command for an injection.
+
+    # Arguments
+
+    - `name` (string): Injection name
+    - `message` (string): Commit message
+
+    # Returns
+
+    Shell command string.
+  */
+  commitCmd = name: message: "${gitEnv name} git commit -m ${escapeShellArg message}";
+
+  /**
+    Generate log command for an injection.
+
+    # Arguments
+
+    - `name` (string): Injection name
+    - `args` (string): Additional git log arguments
+
+    # Returns
+
+    Shell command string.
+  */
+  logCmd = name: args: "${gitEnv name} git log ${args}";
 
 in
 {
   inherit
-    sparsePatterns
-    sparseCheckoutContent
-    gitRemoteAdd
-    gitFetch
-    gitSubtreeAdd
-    gitSubtreePull
-    gitSubtreePush
+    gitbitsDir
+    injectionGitDir
+    gitEnv
+    cloneCmd
+    sparseCheckoutSetup
+    fetchCmd
+    pullCmd
+    pushCmd
+    statusCmd
+    diffCmd
+    addCmd
+    commitCmd
+    logCmd
     ;
 }

@@ -1,8 +1,8 @@
 /**
   Entry point for imp.gitbits.
 
-  Declarative repository composition - mix files from multiple
-  git repositories with fine-grained path control.
+  Multi-repo workspace composition - mix files from multiple
+  git repositories with each maintaining its own history.
 
   # Example
 
@@ -10,10 +10,10 @@
   let
     gitbits = import ./. { inherit lib; };
     config = gitbits.build {
-      mixins = {
-        "my-lib" = {
-          remote = "git@github.com:org/lib.git";
-          mappings = { "src" = "lib/external"; };
+      injections = {
+        "galagit-lint" = {
+          remote = "git@github.com:Alb-O/galagit-lint.git";
+          owns = [ "lint" "nix" "sgconfig.yml" ];
         };
       };
     };

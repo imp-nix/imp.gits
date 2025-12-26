@@ -1,30 +1,39 @@
 /**
-  imp.gitbits - Declarative repository composition.
+  imp.gitbits - Multi-repo workspace composition.
 
-  Mix files from multiple git repositories into a single project
-  with fine-grained path control, while maintaining sync capability
-  with source remotes.
+  Mix files from multiple git repositories into a single workspace,
+  with each repo maintaining its own history and remote sync capability.
 
   # Core Concepts
 
-  - **mixin**: A declaration of files to inject from a remote repo
-  - **mapping**: Source path -> destination path transformation
-  - **sparse set**: Files to checkout from a remote
+  - **workspace**: A directory containing files from multiple git repos
+  - **injection**: A repo whose files are "injected" into the workspace
+  - **owns**: Paths that an injection is responsible for tracking
+
+  # How It Works
+
+  Each injected repo has its .git directory stored in `.gitbits/<name>.git`
+  with `GIT_DIR` and `GIT_WORK_TREE` used to operate on it. The main repo's
+  .gitignore excludes paths owned by injections, and each injection uses
+  sparse-checkout to only track its owned paths.
 
   # Example
 
   ```nix
-  {
-    mixins = {
-      "imp-fmt" = {
-        remote = "git@github.com:imp-nix/imp.fmt.git";
-        branch = "main";
-        mappings = {
-          "src/formatters" = "lib/formatters";  # directory
-          "README.md" = "docs/imp-fmt.md";      # single file
+  let
+    gitbits = import ./. { inherit lib; };
+    config = gitbits.build {
+      injections = {
+        "galagit-lint" = {
+          remote = "git@github.com:Alb-O/galagit-lint.git";
+          branch = "main";
+          owns = [ "lint" "nix" "sgconfig.yml" ];
         };
       };
     };
+  in
+  {
+    inherit (config.scripts) init pull push status;
   }
   ```
 */
@@ -32,25 +41,23 @@
   lib,
 }:
 let
-  validate = import ./validate.nix { inherit lib; };
-  paths = import ./paths.nix { inherit lib; };
-  git = import ./git.nix { inherit lib paths; };
+  manifest = import ./manifest.nix { inherit lib; };
+  gitignore = import ./gitignore.nix { inherit lib; };
+  git = import ./git.nix { inherit lib; };
   scripts = import ./scripts.nix {
     inherit
       lib
-      paths
+      manifest
+      gitignore
       git
-      validate
       ;
   };
   build = import ./build.nix {
     inherit
-      lib
-      paths
-      git
+      manifest
+      gitignore
       scripts
-      validate
       ;
   };
 in
-validate // paths // git // scripts // build
+manifest // gitignore // git // scripts // build

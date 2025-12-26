@@ -1,54 +1,59 @@
 /**
-  Tests for git command generation: sparsePatterns, gitRemoteAdd,
-  gitFetch, gitSubtreeAdd.
+  Tests for git command generation.
 */
 {
   lib,
   gitbits,
 }:
 let
-  mixin = {
+  injection = {
     remote = "git@github.com:test/repo.git";
     branch = "main";
-    mappings = {
-      "src/lib" = "lib/external";
-    };
+    owns = [ "lint" ];
   };
-
 in
 {
-  sparsePatterns."test generates directory patterns" = {
-    expr = builtins.sort builtins.lessThan (gitbits.sparsePatterns { mappings."src/lib" = "dest"; });
-    expected = [
-      "/src/lib"
-      "/src/lib/**"
-    ];
+  git."injectionGitDir returns correct path" = {
+    expr = gitbits.injectionGitDir "test";
+    expected = ".gitbits/test.git";
   };
 
-  gitRemoteAdd."test generates command" = {
-    expr = gitbits.gitRemoteAdd "origin" "git@github.com:test/repo.git";
-    expected = "git remote add origin git@github.com:test/repo.git";
-  };
-
-  gitRemoteAdd."test escapes special characters" = {
-    expr = gitbits.gitRemoteAdd "remote" "https://example.com/repo's.git";
-    expected = "git remote add remote 'https://example.com/repo'\\''s.git'";
-  };
-
-  gitFetch."test uses branch" = {
-    expr = gitbits.gitFetch "origin" { branch = "develop"; };
-    expected = "git fetch origin develop";
-  };
-
-  gitSubtreeAdd."test includes squash by default" = {
-    expr = lib.hasInfix "--squash" (gitbits.gitSubtreeAdd "origin" mixin "lib/dest");
+  git."gitEnv sets GIT_DIR and GIT_WORK_TREE" = {
+    expr =
+      let
+        env = gitbits.gitEnv "test";
+      in
+      lib.hasInfix "GIT_DIR=" env && lib.hasInfix "GIT_WORK_TREE=" env;
     expected = true;
   };
 
-  gitSubtreeAdd."test respects squash=false" = {
-    expr = lib.hasInfix "--squash" (
-      gitbits.gitSubtreeAdd "origin" (mixin // { squash = false; }) "lib"
-    );
-    expected = false;
+  git."cloneCmd includes separate-git-dir" = {
+    expr = lib.hasInfix "--separate-git-dir=" (gitbits.cloneCmd "test" injection);
+    expected = true;
+  };
+
+  git."cloneCmd includes remote" = {
+    expr = lib.hasInfix "git@github.com:test/repo.git" (gitbits.cloneCmd "test" injection);
+    expected = true;
+  };
+
+  git."fetchCmd uses gitEnv" = {
+    expr = lib.hasInfix "GIT_DIR=" (gitbits.fetchCmd "test" injection);
+    expected = true;
+  };
+
+  git."pullCmd includes branch" = {
+    expr = lib.hasInfix "main" (gitbits.pullCmd "test" injection);
+    expected = true;
+  };
+
+  git."pushCmd includes branch" = {
+    expr = lib.hasInfix "main" (gitbits.pushCmd "test" injection);
+    expected = true;
+  };
+
+  git."statusCmd uses gitEnv" = {
+    expr = lib.hasPrefix "GIT_DIR=" (gitbits.statusCmd "test");
+    expected = true;
   };
 }

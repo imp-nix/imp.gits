@@ -10,8 +10,8 @@ let
     inherit lib gitbits;
   };
 in
-(import ./validate.nix args)
-// (import ./paths.nix args)
+(import ./manifest.nix args)
+// (import ./gitignore.nix args)
 // (import ./git.nix args)
 // (import ./scripts.nix args)
 // (import ./build.nix args)

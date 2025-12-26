@@ -6,52 +6,85 @@
   gitbits,
 }:
 let
-  mixin = {
+  injection = {
     remote = "git@github.com:test/repo.git";
     branch = "main";
-    mappings = {
-      "src/lib" = "lib/external";
-    };
+    owns = [
+      "lint"
+      "nix"
+    ];
   };
-
 in
 {
-  initScript."test generates valid bash script" = {
+  scripts."initScript generates valid bash" = {
     expr =
       let
-        script = gitbits.initScript { test = mixin; };
+        script = gitbits.initScript { test = injection; };
       in
-      lib.hasPrefix "#!/usr/bin/env bash" script
-      && lib.hasInfix "set -euo pipefail" script
-      && lib.hasInfix "git remote add" script
-      && lib.hasInfix "subtree add" script;
+      lib.hasPrefix "#!/usr/bin/env bash" script && lib.hasInfix "set -euo pipefail" script;
     expected = true;
   };
 
-  pullScript."test includes fetch and pull" = {
+  scripts."initScript includes clone" = {
     expr =
       let
-        script = gitbits.pullScript { test = mixin; };
+        script = gitbits.initScript { test = injection; };
       in
-      lib.hasInfix "git fetch" script && lib.hasInfix "subtree pull" script;
+      lib.hasInfix "git clone" script;
     expected = true;
   };
 
-  pushScript."test includes warning and push" = {
+  scripts."initScript creates .gitbits dir" = {
     expr =
       let
-        script = gitbits.pushScript { test = mixin; };
+        script = gitbits.initScript { test = injection; };
       in
-      lib.hasInfix "WARNING" script && lib.hasInfix "subtree push" script;
+      lib.hasInfix "mkdir -p .gitbits" script;
     expected = true;
   };
 
-  statusScript."test shows diff and remote info" = {
+  scripts."pullScript includes git pull" = {
     expr =
       let
-        script = gitbits.statusScript { test = mixin; };
+        script = gitbits.pullScript { test = injection; };
       in
-      lib.hasInfix "git diff" script && lib.hasInfix "Remote:" script;
+      lib.hasInfix "git pull" script;
+    expected = true;
+  };
+
+  scripts."pushScript includes warning" = {
+    expr =
+      let
+        script = gitbits.pushScript { test = injection; };
+      in
+      lib.hasInfix "WARNING" script;
+    expected = true;
+  };
+
+  scripts."pushScript includes git push" = {
+    expr =
+      let
+        script = gitbits.pushScript { test = injection; };
+      in
+      lib.hasInfix "git push" script;
+    expected = true;
+  };
+
+  scripts."statusScript shows remote info" = {
+    expr =
+      let
+        script = gitbits.statusScript { test = injection; };
+      in
+      lib.hasInfix "Remote:" script;
+    expected = true;
+  };
+
+  scripts."injectionGitWrapper uses GIT_DIR" = {
+    expr =
+      let
+        wrapper = gitbits.injectionGitWrapper "test";
+      in
+      lib.hasInfix "GIT_DIR=" wrapper;
     expected = true;
   };
 }

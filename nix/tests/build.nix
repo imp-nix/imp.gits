@@ -1,26 +1,25 @@
 /**
-  Tests for high-level build API and integration tests.
+  Tests for high-level build API.
 */
 {
-  lib,
   gitbits,
+  ...
 }:
 let
-  mixin = {
+  injection = {
     remote = "git@github.com:test/repo.git";
     branch = "main";
-    mappings = {
-      "src/lib" = "lib/external";
-      "README.md" = "docs/readme.md";
-    };
+    owns = [
+      "lint"
+      "nix"
+    ];
   };
-
 in
 {
-  build."test returns complete config" = {
+  build."returns complete config" = {
     expr =
       let
-        result = gitbits.build { mixins.test = mixin; };
+        result = gitbits.build { injections.test = injection; };
       in
       builtins.attrNames result.scripts == [
         "init"
@@ -30,53 +29,61 @@ in
       ]
       && result.validation.valid
       && builtins.hasAttr "test" result.sparseCheckouts
-      && builtins.length result.allDestinations == 2
-      && result.destinationMap."lib/external".mixin == "test";
+      && builtins.length result.ownedPaths == 2;
     expected = true;
   };
 
-  build."test handles empty config" = {
-    expr = (gitbits.build { }).allDestinations;
+  build."handles empty config" = {
+    expr = (gitbits.build { }).ownedPaths;
     expected = [ ];
   };
 
-  integration."test multiple mixins" = {
+  build."collects injection names" = {
     expr =
-      let
-        result = gitbits.build {
-          mixins = {
-            fmt = {
-              remote = "git@github.com:imp-nix/imp.fmt.git";
-              mappings."src/formatters" = "lib/formatters";
-            };
-            docgen = {
-              remote = "git@github.com:imp-nix/imp.docgen.git";
-              mappings."nix/lib.nix" = "lib/docgen.nix";
-            };
+      (gitbits.build {
+        injections = {
+          a = {
+            remote = "x";
+            owns = [ "a" ];
+          };
+          b = {
+            remote = "y";
+            owns = [ "b" ];
           };
         };
+      }).injectionNames;
+    expected = [
+      "a"
+      "b"
+    ];
+  };
+
+  build."generates wrappers for each injection" = {
+    expr =
+      let
+        result = gitbits.build { injections.test = injection; };
       in
-      result.validation.valid && builtins.length result.allDestinations == 2;
+      builtins.hasAttr "test" result.wrappers;
     expected = true;
   };
 
-  integration."test detects path conflicts" = {
+  build."detects conflicts" = {
     expr =
       let
         result = gitbits.build {
-          mixins = {
+          injections = {
             a = {
-              remote = "git@github.com:test/a.git";
-              mappings."src" = "lib/shared";
+              remote = "x";
+              owns = [ "lib" ];
             };
             b = {
-              remote = "git@github.com:test/b.git";
-              mappings."src" = "lib/shared/nested";
+              remote = "y";
+              owns = [ "lib/sub" ];
             };
           };
         };
       in
-      builtins.length result.conflicts > 0;
-    expected = true;
+      result.validation.valid;
+    expected = false;
   };
 }

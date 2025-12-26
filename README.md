@@ -1,25 +1,26 @@
 # imp.gitbits
 
-Declarative repository composition for Nix projects.
+Multi-repo workspace composition for Nix projects.
 
-Mix files from multiple git repositories into a single project with fine-grained path control, while maintaining the ability to sync (push/pull) with source remotes.
+Mix files from multiple git repositories into a single workspace directory, with each repo maintaining its own history and the ability to push/pull independently.
 
 ## The Problem
 
-Git submodules require self-contained nested directories. You can't:
+Git submodules and subtrees require files from external repos to live in dedicated subdirectories. You can't:
 
-- Place files from repo A at `lib/formatters/` and repo B at `lib/validators/`
-- Freely mix files from multiple repos within the same directory tree
-- Easily keep changes in sync with upstream when files are reorganized
+- Mix files from repo A and repo B at the same directory level
+- Have `lint/` from one repo and `src/` from another both at the workspace root
+- Easily sync changes bidirectionally while files are interleaved
 
 ## The Solution
 
-`imp.gitbits` uses git subtree under the hood but provides:
+`imp.gitbits` uses multiple git repositories sharing a single working directory:
 
-- Declarative Nix configuration
-- Arbitrary source→destination path mappings
-- Conflict detection before operations
-- Generated shell scripts for init/pull/push/status
+- Each "injected" repo has its `.git` stored in `.gitbits/<name>.git`
+- Uses `GIT_DIR` + `GIT_WORK_TREE` for operations on each repo
+- Main repo's `.gitignore` excludes paths owned by injections
+- Each injection uses sparse-checkout to only track its owned paths
+- Full git history preserved in each repo
 
 ## Usage
 
@@ -28,128 +29,192 @@ let
   gitbits = import ./path/to/imp.gitbits { inherit lib; };
   
   config = gitbits.build {
-    mixins = {
-      "imp-fmt" = {
-        remote = "git@github.com:imp-nix/imp.fmt.git";
+    injections = {
+      # Inject galagit-lint repo - its files appear at workspace root
+      "galagit-lint" = {
+        remote = "git@github.com:Alb-O/galagit-lint.git";
         branch = "main";
-        squash = true;  # default
-        mappings = {
-          # source (in remote) = destination (in this repo)
-          "src/formatters" = "lib/formatters";
-          "README.md" = "docs/imp-fmt-readme.md";
-        };
+        owns = [ "lint" "nix" "sgconfig.yml" ];  # paths this repo owns
       };
       
-      "imp-docgen" = {
-        remote = "git@github.com:imp-nix/imp.docgen.git";
-        branch = "main";
-        mappings = {
-          "nix/lib.nix" = "lib/docgen.nix";
-          "nix/schema.nix" = "lib/docgen-schema.nix";
-        };
+      # Another injection
+      "my-tools" = {
+        remote = "git@github.com:org/tools.git";
+        owns = [ "tools" ".editorconfig" ];
       };
     };
   };
 in
 {
   # Generated shell scripts
-  initScript = config.scripts.init;    # Set up remotes and initial subtrees
-  pullScript = config.scripts.pull;    # Pull updates from all remotes
-  pushScript = config.scripts.push;    # Push changes back to remotes
-  statusScript = config.scripts.status; # Show status of all mixins
+  inherit (config.scripts) init pull push status use;
+  
+  # Per-injection git wrappers
+  inherit (config.wrappers) galagit-lint my-tools;
   
   # Metadata
-  allPaths = config.allDestinations;   # [ "lib/formatters" "docs/imp-fmt-readme.md" ... ]
-  pathInfo = config.destinationMap;    # { "lib/formatters" = { mixin = "imp-fmt"; ... }; }
+  ownedPaths = config.ownedPaths;     # [ "lint" "nix" "sgconfig.yml" "tools" ... ]
+  injectionNames = config.injectionNames;
   
   # Validation
   isValid = config.validation.valid;
   errors = config.validation.errors;
-  conflicts = config.conflicts;
 }
+```
+
+## How It Works
+
+After running `init`, your workspace looks like:
+
+```
+workspace/
+├── .git/                    # Main repo
+├── .gitbits/
+│   ├── galagit-lint.git/    # Injection git dir
+│   └── my-tools.git/        # Another injection
+├── .gitignore               # Auto-updated to ignore injection paths
+├── README.md                # Main repo file
+├── src/                     # Main repo
+├── lint/                    # From galagit-lint
+├── nix/                     # From galagit-lint  
+├── sgconfig.yml             # From galagit-lint
+├── tools/                   # From my-tools
+└── .editorconfig            # From my-tools
+```
+
+Each repo only "sees" its own files:
+
+```bash
+# Main repo status - ignores injection paths
+git status
+
+# Injection status - only sees owned paths
+GIT_DIR=.gitbits/galagit-lint.git GIT_WORK_TREE=. git status
 ```
 
 ## Generated Scripts
 
 ### init
 
-Sets up remotes and performs initial `git subtree add` for each mapping:
+Clones injections with sparse-checkout and sets up `.gitignore`:
 
 ```bash
-./result/init.sh
+./result/init
 ```
 
 ### pull
 
-Fetches and pulls updates from all mixin remotes:
+Pulls updates from all injection remotes:
 
 ```bash
-./result/pull.sh
+./result/pull
 ```
 
 ### push
 
-Pushes local changes back to mixin remotes (use with caution):
+Pushes local changes back to injection remotes:
 
 ```bash
-./result/push.sh
+./result/push
 ```
 
 ### status
 
-Shows the current state of all mixins:
+Shows status of main repo and all injections:
 
 ```bash
-./result/status.sh
+./result/status
+```
+
+## Switching Git Context
+
+Use the `use` script to switch between repos in your current shell:
+
+```bash
+# Switch to an injection
+eval "$(./result/use galagit-lint)"
+git log          # shows galagit-lint history
+git status       # shows galagit-lint status
+git add . && git commit -m "fix"  # commits to galagit-lint
+
+# Switch back to main repo
+eval "$(./result/use main)"
+git log          # shows main repo history
+```
+
+For convenience, add a shell function to your config:
+
+```bash
+# Add to ~/.bashrc or ~/.zshrc
+gbu() { eval "$(./result/use "$1")" && echo "Switched to $1"; }
+
+# Then just:
+gbu galagit-lint   # switch to injection
+gbu main           # switch back
+```
+
+### Per-Injection Git Wrapper
+
+For one-off commands without switching context, use the generated wrappers:
+
+```bash
+# Single command to injection
+./result/galagit-lint log --oneline
+./result/galagit-lint diff
+
+# Or manually
+GIT_DIR=.gitbits/galagit-lint.git GIT_WORK_TREE=. git log --oneline
 ```
 
 ## API Reference
 
-### Validation
+### Manifest
 
-- `isValidPath path` - Check if path is valid (no `..`, not absolute)
-- `isValidRemote url` - Check if URL is a valid git remote
-- `validateMixin name mixin` - Validate a single mixin config
-- `validateMixins mixins` - Validate all mixins
-- `detectPathConflicts mixins` - Find destination path conflicts
+- `validateInjection name injection` - Validate a single injection config
+- `validateManifest injections` - Validate all injections
+- `detectConflicts injections` - Find ownership conflicts
+- `allOwnedPaths injections` - Get all paths owned by injections
+- `pathOwner injections path` - Find which injection owns a path
 
-### Path Utilities
+### Gitignore
 
-- `normalizePath path` - Remove trailing/duplicate slashes
-- `parentDir path` - Get parent directory
-- `baseName path` - Get last path component
-- `pathsConflict a b` - Check if paths would conflict
+- `mainRepoIgnores injections` - Generate `.gitignore` content for main repo
+- `injectionExcludes injection` - Generate exclude patterns for an injection
+- `sparseCheckoutPatterns injection` - Generate sparse-checkout patterns
 
 ### Git Commands
 
-- `gitRemoteAdd name url` - Generate `git remote add` command
-- `gitFetch name mixin` - Generate `git fetch` command
-- `gitSubtreeAdd name mixin prefix` - Generate `git subtree add` command
-- `gitSubtreePull name mixin prefix` - Generate `git subtree pull` command
-- `gitSubtreePush name mixin prefix` - Generate `git subtree push` command
+- `injectionGitDir name` - Get git dir path for injection
+- `gitEnv name` - Get `GIT_DIR=... GIT_WORK_TREE=...` prefix
+- `cloneCmd name injection` - Generate clone command
+- `pullCmd name injection` - Generate pull command
+- `pushCmd name injection` - Generate push command
+- `statusCmd name` - Generate status command
 
 ### Scripts
 
-- `initScript mixins` - Generate initialization script
-- `pullScript mixins` - Generate pull script
-- `pushScript mixins` - Generate push script
-- `statusScript mixins` - Generate status script
+- `initScript injections` - Generate initialization script
+- `pullScript injections` - Generate pull script
+- `pushScript injections` - Generate push script
+- `statusScript injections` - Generate status script
+- `useScript injections` - Generate context-switching script
+- `injectionGitWrapper name` - Generate git wrapper for an injection
 
 ### High-Level
 
 - `build config` - Build complete configuration with scripts and metadata
 
-## Mixin Options
+## Injection Options
 
-| Option     | Type    | Default  | Description                          |
-| ---------- | ------- | -------- | ------------------------------------ |
-| `remote`   | string  | required | Git remote URL                       |
-| `branch`   | string  | `"main"` | Branch to track                      |
-| `squash`   | bool    | `true`   | Squash commits on subtree operations |
-| `mappings` | attrset | required | Source path → destination path       |
+| Option   | Type   | Default  | Description               |
+| -------- | ------ | -------- | ------------------------- |
+| `remote` | string | required | Git remote URL            |
+| `branch` | string | `"main"` | Branch to track           |
+| `owns`   | list   | required | Paths this injection owns |
 
 ## Limitations
 
-- Each destination path can only come from one mixin (conflicts are detected)
-- Nested destination conflicts (e.g., `lib` and `lib/sub`) are detected and rejected
-- Pushing requires write access to the remote repository
+- Each path can only be owned by one injection (conflicts detected)
+- Nested ownership (e.g., `lib` and `lib/sub`) is not allowed
+- New files must be manually assigned to an injection or main repo
+- IDE git integration may need configuration to handle multiple repos

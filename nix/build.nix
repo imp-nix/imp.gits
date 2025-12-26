@@ -2,94 +2,84 @@
   High-level build API for gitbits configuration.
 */
 {
-  lib,
-  paths,
-  git,
+  manifest,
+  gitignore,
   scripts,
-  validate,
 }:
 let
-  inherit (builtins)
-    attrValues
-    foldl'
-    mapAttrs
-    ;
+  inherit (builtins) attrNames mapAttrs;
 
-  inherit (lib)
-    flatten
-    mapAttrsToList
-    ;
-
-  inherit (paths) detectPathConflicts;
-  inherit (git) sparseCheckoutContent;
+  inherit (manifest) validateManifest allOwnedPaths;
+  inherit (gitignore) mainRepoExcludes sparseCheckoutPatterns;
   inherit (scripts)
     initScript
     pullScript
     pushScript
     statusScript
+    injectionGitWrapper
+    useScript
     ;
-  inherit (validate) validateMixins;
 
   /**
-    Build a complete gitbits configuration.
+    Build a complete gitbits workspace configuration.
 
     # Arguments
 
-    - `config` (attrset): Configuration with `mixins` attribute
+    - `config` (attrset): Configuration with `injections` attribute
 
     # Returns
 
-    Attrset with scripts and metadata.
+    Attrset with scripts, metadata, and validation results.
+
+    # Example
+
+    ```nix
+    gitbits.build {
+      injections = {
+        galagit-lint = {
+          remote = "git@github.com:Alb-O/galagit-lint.git";
+          branch = "main";
+          owns = [ "lint" "nix" "sgconfig.yml" ];
+        };
+      };
+    }
+    ```
   */
   build =
     config:
     let
-      mixins = config.mixins or { };
-      validation = validateMixins mixins;
-      conflicts = detectPathConflicts mixins;
+      injections = config.injections or { };
+      validation = validateManifest injections;
     in
     {
-      inherit validation conflicts;
+      inherit validation;
 
+      # Generated shell scripts
       scripts = {
-        init = initScript mixins;
-        pull = pullScript mixins;
-        push = pushScript mixins;
-        status = statusScript mixins;
+        init = initScript injections;
+        pull = pullScript injections;
+        push = pushScript injections;
+        status = statusScript injections;
+        use = useScript injections;
       };
 
-      # Per-mixin sparse checkout content
-      sparseCheckouts = mapAttrs (_: sparseCheckoutContent) mixins;
+      # Per-injection git wrappers (gitbits-<name>)
+      wrappers = mapAttrs (name: _: injectionGitWrapper name) injections;
 
-      # Flat list of all destination paths
-      allDestinations = flatten (mapAttrsToList (_: mixin: attrValues (mixin.mappings or { })) mixins);
+      # Exclude content for main repo's .git/info/exclude
+      mainExcludes = mainRepoExcludes injections;
 
-      # Mapping from dest -> source info
-      destinationMap =
-        foldl'
-          (
-            acc: item:
-            acc
-            // {
-              ${item.dst} = {
-                mixin = item.name;
-                source = item.src;
-                remote = item.remote;
-              };
-            }
-          )
-          { }
-          (
-            flatten (
-              mapAttrsToList (
-                name: mixin:
-                mapAttrsToList (src: dst: {
-                  inherit name src dst;
-                  remote = mixin.remote;
-                }) (mixin.mappings or { })
-              ) mixins
-            )
-          );
+      # Sparse checkout patterns per injection
+      sparseCheckouts = mapAttrs (_: sparseCheckoutPatterns) injections;
+
+      # All paths owned by injections (main repo should ignore these)
+      ownedPaths = allOwnedPaths injections;
+
+      # List of injection names
+      injectionNames = attrNames injections;
+
+      # Raw config for inspection
+      inherit injections;
     };
 
 in
