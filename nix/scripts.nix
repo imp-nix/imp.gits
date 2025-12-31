@@ -233,13 +233,19 @@ let
 
       perInjectionCase = name: ''
         ${name})
-            if [ -n "''${FISH_VERSION:-}" ]; then
-              echo "set -gx GIT_DIR '${git.injectionGitDir name}'"
-              echo "set -gx GIT_WORK_TREE '.'"
-            else
-              echo "export GIT_DIR='${git.injectionGitDir name}'"
-              echo "export GIT_WORK_TREE='.'"
-            fi
+            case "$PARENT_SHELL" in
+              fish)
+                echo "set -gx GIT_DIR '${git.injectionGitDir name}'"
+                echo "set -gx GIT_WORK_TREE '.'"
+                ;;
+              nu)
+                printf '{"GIT_DIR": "%s", "GIT_WORK_TREE": "."}\n' "${git.injectionGitDir name}"
+                ;;
+              *)
+                echo "export GIT_DIR='${git.injectionGitDir name}'"
+                echo "export GIT_WORK_TREE='.'"
+                ;;
+            esac
             ;;
       '';
 
@@ -247,6 +253,20 @@ let
     in
     scriptHeader
     + ''
+      # Detect parent shell by walking up process tree
+      detect_shell() {
+        local pid=$PPID
+        while [ "$pid" != "1" ] && [ -n "$pid" ]; do
+          local comm=$(cat /proc/$pid/comm 2>/dev/null || echo "")
+          case "$comm" in
+            fish|nu|bash|zsh) echo "$comm"; return ;;
+          esac
+          pid=$(cut -d' ' -f4 /proc/$pid/stat 2>/dev/null || echo "1")
+        done
+        echo "unknown"
+      }
+      PARENT_SHELL=$(detect_shell)
+
       show_help() {
         echo "Usage: eval \"\\\$(git bits use [context])\""
         echo ""
@@ -264,11 +284,17 @@ let
           ${concatStringsSep "\n      " (map (n: ''echo "${n}"'') injectionNames)}
           ;;
         main)
-          if [ -n "''${FISH_VERSION:-}" ]; then
-            echo "set -e GIT_DIR; set -e GIT_WORK_TREE"
-          else
-            echo "unset GIT_DIR GIT_WORK_TREE"
-          fi
+          case "$PARENT_SHELL" in
+            fish)
+              echo "set -e GIT_DIR; set -e GIT_WORK_TREE"
+              ;;
+            nu)
+              echo '{"GIT_DIR": null, "GIT_WORK_TREE": null}'
+              ;;
+            *)
+              echo "unset GIT_DIR GIT_WORK_TREE"
+              ;;
+          esac
           ;;
         ${cases}
         *)

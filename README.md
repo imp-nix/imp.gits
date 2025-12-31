@@ -48,6 +48,9 @@ eval "$(git bits use main)"      # switch back
 
 # fish
 eval (git bits use my-lib)
+
+# nushell
+git bits use my-lib | from json | load-env
 ```
 
 ## Commands
