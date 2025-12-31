@@ -233,8 +233,13 @@ let
 
       perInjectionCase = name: ''
         ${name})
-            echo "export GIT_DIR='${git.injectionGitDir name}'"
-            echo "export GIT_WORK_TREE='.'"
+            if [ -n "''${FISH_VERSION:-}" ]; then
+              echo "set -gx GIT_DIR '${git.injectionGitDir name}'"
+              echo "set -gx GIT_WORK_TREE '.'"
+            else
+              echo "export GIT_DIR='${git.injectionGitDir name}'"
+              echo "export GIT_WORK_TREE='.'"
+            fi
             ;;
       '';
 
@@ -243,7 +248,7 @@ let
     scriptHeader
     + ''
       show_help() {
-        echo "Usage: eval \"\\\$(gitbits-use [context])\""
+        echo "Usage: eval \"\\\$(git bits use [context])\""
         echo ""
         echo "Contexts: main (default), ${namesStr}"
         echo ""
@@ -259,7 +264,11 @@ let
           ${concatStringsSep "\n      " (map (n: ''echo "${n}"'') injectionNames)}
           ;;
         main)
-          echo "unset GIT_DIR GIT_WORK_TREE"
+          if [ -n "''${FISH_VERSION:-}" ]; then
+            echo "set -e GIT_DIR; set -e GIT_WORK_TREE"
+          else
+            echo "unset GIT_DIR GIT_WORK_TREE"
+          fi
           ;;
         ${cases}
         *)
