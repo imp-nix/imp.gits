@@ -51,12 +51,13 @@ let
       setupDir = ''
         echo "Setting up imp.gitbits workspace..."
         mkdir -p ${gitbitsDir}/tmp
-        mkdir -p .git/info
-        if ! grep -q "imp.gitbits managed" .git/info/exclude 2>/dev/null; then
-          cat >> .git/info/exclude << 'EXCLUDE_EOF'
+        GIT_DIR="$(git rev-parse --git-dir)"
+        mkdir -p "$GIT_DIR/info"
+        if ! grep -q "imp.gitbits managed" "$GIT_DIR/info/exclude" 2>/dev/null; then
+          cat >> "$GIT_DIR/info/exclude" << 'EXCLUDE_EOF'
         ${mainRepoExcludes injections}
         EXCLUDE_EOF
-          echo "Updated .git/info/exclude"
+          echo "Updated $GIT_DIR/info/exclude"
         fi
       '';
 
