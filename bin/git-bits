@@ -19,13 +19,13 @@ Commands:
   status        Show status of all repos
   pull          Pull updates for all injections
   push          Push changes to injection remotes
-  use <name>    Output shell commands to switch context (wrap in eval)
+  use <name>    Switch git context to an injection (or 'main')
   list          List available contexts
   help          Show this help
 
 Context switching:
-  eval "\$(git bits use <name>)"   Switch to injection context
-  eval "\$(git bits use main)"     Switch back to main repo
+  bash/zsh:  eval "\$(git bits use <name>)"
+  fish:      eval (git bits use <name>)
 
 Config file ($CONFIG_FILE):
   {

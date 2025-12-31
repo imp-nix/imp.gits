@@ -41,9 +41,13 @@ git bits init
 3. Switch contexts:
 
 ```bash
-eval "$(git bits use my-lib)"   # switch to injection
+# bash/zsh
+eval "$(git bits use my-lib)"
 git log                          # sees my-lib history
 eval "$(git bits use main)"      # switch back
+
+# fish
+eval (git bits use my-lib)
 ```
 
 ## Commands
