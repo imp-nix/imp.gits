@@ -233,17 +233,16 @@ let
 
       perInjectionCase = name: ''
         ${name})
+            ABS_GIT_DIR="$PWD/${git.injectionGitDir name}"
             case "$PARENT_SHELL" in
               fish)
-                echo "set -gx GIT_DIR '${git.injectionGitDir name}'"
-                echo "set -gx GIT_WORK_TREE '.'"
+                echo "set -gx GIT_DIR '$ABS_GIT_DIR'; set -gx GIT_WORK_TREE '$PWD'"
                 ;;
               nu)
-                printf '{"GIT_DIR": "%s", "GIT_WORK_TREE": "."}\n' "${git.injectionGitDir name}"
+                printf '{"GIT_DIR": "%s", "GIT_WORK_TREE": "%s"}\n' "$ABS_GIT_DIR" "$PWD"
                 ;;
               *)
-                echo "export GIT_DIR='${git.injectionGitDir name}'"
-                echo "export GIT_WORK_TREE='.'"
+                echo "export GIT_DIR='$ABS_GIT_DIR'; export GIT_WORK_TREE='$PWD'"
                 ;;
             esac
             ;;
