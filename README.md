@@ -18,16 +18,17 @@ Or in a flake:
 
 ## Quick Start
 
-1. Create `.gitbits.nix` in your repo:
+1. Create `.gitbits/config.nix` in your repo:
 
 ```nix
 {
-  injections = {
-    my-lib = {
+  injections = [
+    {
+      name = "my-lib";
       remote = "https://github.com/org/lib.git";
-      owns = [ "lib" "tools" ];
-    };
-  };
+      use = [ "lib" "tools" ];
+    }
+  ];
 }
 ```
 
@@ -58,14 +59,14 @@ eval "$(git bits use main)"      # switch back
 
 ## How It Works
 
-Each injection's `.git` is stored in `.gitbits/<name>.git`. The main repo's `.git/info/exclude` hides injection paths, and injections use sparse-checkout to track only their owned paths.
+Each injection's `.git` is stored in `.gitbits/<name>.git`. The `.gitbits/` directory is self-ignoring (via internal `.gitignore`) except for `config.nix`. Injections use sparse-checkout to track only their used paths.
 
 ```
 workspace/
 ├── .git/                    # Main repo
 ├── .gitbits/
-│   └── my-lib.git/          # Injection git dir
-├── .gitbits.nix             # Config
+│   ├── config.nix           # Config (tracked)
+│   └── my-lib.git/          # Injection git dir (ignored)
 ├── src/                     # Main repo
 ├── lib/                     # From my-lib
 └── tools/                   # From my-lib
@@ -75,15 +76,18 @@ workspace/
 
 ```nix
 {
-  injections = {
-    <name> = {
+  injections = [
+    {
+      name = "...";          # required: injection identifier
       remote = "...";        # required: git remote URL
       branch = "main";       # optional: branch to track (default: main)
-      owns = [ "path" ... ]; # required: paths this injection owns
-    };
-  };
+      use = [ "path" ... ];  # required: paths to take from this injection
+    }
+  ];
 }
 ```
+
+Injections are applied in order - later entries override earlier ones for conflicting paths.
 
 ## Nix Library
 
@@ -93,16 +97,14 @@ For programmatic use:
 let
   gitbits = import ./path/to/imp.gitbits { inherit lib; };
   config = gitbits.build {
-    injections = { /* ... */ };
+    injections = [ /* ... */ ];
   };
 in {
   inherit (config.scripts) init pull push status use;
-  inherit (config) ownedPaths validation;
+  inherit (config) usedPaths validation;
 }
 ```
 
 ## Limitations
 
-- Each path can only be owned by one injection
-- Nested ownership (e.g., `lib` and `lib/sub`) not allowed
 - Files tracked by main repo must be untracked before injection can claim them

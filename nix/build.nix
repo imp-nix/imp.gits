@@ -7,10 +7,10 @@
   scripts,
 }:
 let
-  inherit (builtins) attrNames mapAttrs;
+  inherit (builtins) listToAttrs map;
 
-  inherit (manifest) validateManifest allOwnedPaths;
-  inherit (gitignore) mainRepoExcludes sparseCheckoutPatterns;
+  inherit (manifest) validateManifest allUsedPaths;
+  inherit (gitignore) sparseCheckoutPatterns;
   inherit (scripts)
     initScript
     pullScript
@@ -25,7 +25,7 @@ let
 
     # Arguments
 
-    - `config` (attrset): Configuration with `injections` attribute
+    - `config` (attrset): Configuration with `injections` list
 
     # Returns
 
@@ -35,20 +35,20 @@ let
 
     ```nix
     gitbits.build {
-      injections = {
-        galagit-lint = {
-          remote = "git@github.com:Alb-O/galagit-lint.git";
-          branch = "main";
-          owns = [ "lint" "nix" "sgconfig.yml" ];
-        };
-      };
+      injections = [
+        {
+          name = "lintfra";
+          remote = "git@github.com:org/lintfra.git";
+          use = [ "lint/ast-rules" "nix/scripts" ];
+        }
+      ];
     }
     ```
   */
   build =
     config:
     let
-      injections = config.injections or { };
+      injections = config.injections or [ ];
       validation = validateManifest injections;
     in
     {
@@ -64,19 +64,26 @@ let
       };
 
       # Per-injection git wrappers (gitbits-<name>)
-      wrappers = mapAttrs (name: _: injectionGitWrapper name) injections;
-
-      # Exclude content for main repo's .git/info/exclude
-      mainExcludes = mainRepoExcludes injections;
+      wrappers = listToAttrs (
+        map (inj: {
+          name = inj.name;
+          value = injectionGitWrapper inj.name;
+        }) injections
+      );
 
       # Sparse checkout patterns per injection
-      sparseCheckouts = mapAttrs (_: sparseCheckoutPatterns) injections;
+      sparseCheckouts = listToAttrs (
+        map (inj: {
+          name = inj.name;
+          value = sparseCheckoutPatterns inj;
+        }) injections
+      );
 
-      # All paths owned by injections (main repo should ignore these)
-      ownedPaths = allOwnedPaths injections;
+      # All paths used by injections
+      usedPaths = allUsedPaths injections;
 
       # List of injection names
-      injectionNames = attrNames injections;
+      injectionNames = map (inj: inj.name) injections;
 
       # Raw config for inspection
       inherit injections;

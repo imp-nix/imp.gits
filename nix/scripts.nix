@@ -8,12 +8,10 @@
   git,
 }:
 let
-  inherit (builtins) concatStringsSep;
-
-  inherit (lib) mapAttrsToList;
+  inherit (builtins) concatStringsSep map;
 
   inherit (manifest) validateManifest;
-  inherit (gitignore) mainRepoExcludes sparseCheckoutPatterns;
+  inherit (gitignore) sparseCheckoutPatterns injectionExcludes;
   inherit (git)
     gitbitsDir
     cloneCmd
@@ -32,12 +30,12 @@ let
   /**
     Generate initialization script.
 
-    Sets up .gitbits directory, clones all injections with sparse checkout,
-    and configures main repo gitignore.
+    Sets up .gitbits directory, clones all injections with sparse checkout.
+    Injections are processed in order - later ones override earlier ones.
 
     # Arguments
 
-    - `injections` (attrset): Map of injection name -> config
+    - `injections` (list): List of injection configs
 
     # Returns
 
@@ -51,53 +49,53 @@ let
       setupDir = ''
         echo "Setting up imp.gitbits workspace..."
         mkdir -p ${gitbitsDir}/tmp
-        GIT_DIR="$(git rev-parse --git-dir)"
-        mkdir -p "$GIT_DIR/info"
-        if ! grep -q "imp.gitbits managed" "$GIT_DIR/info/exclude" 2>/dev/null; then
-          cat >> "$GIT_DIR/info/exclude" << 'EXCLUDE_EOF'
-        ${mainRepoExcludes injections}
-        EXCLUDE_EOF
-          echo "Updated $GIT_DIR/info/exclude"
-        fi
+        cat > ${gitbitsDir}/.gitignore << 'EOF'
+        *
+        !.gitignore
+        !config.nix
+        EOF
       '';
 
       perInjection =
-        name: injection:
+        injection:
         let
+          name = injection.name;
           sparseContent = sparseCheckoutPatterns injection;
-          ownsList = injection.owns or [ ];
-          ownsChecks = concatStringsSep "\n" (
+          excludeContent = injectionExcludes injection;
+          useList = injection.use or [ ];
+          useChecks = concatStringsSep "\n" (
             map (p: ''
-              if git ls-files --error-unmatch ${lib.escapeShellArg p} >/dev/null 2>&1; then
+              tracked=$(git ls-files ${lib.escapeShellArg p} 2>/dev/null || true)
+              if [ -n "$tracked" ]; then
                 conflicts="$conflicts ${lib.escapeShellArg p}"
               fi
-            '') ownsList
+            '') useList
           );
         in
         ''
           echo ""
           echo "Initializing: ${name}"
           echo "  Remote: ${injection.remote}"
-          echo "  Owns: ${concatStringsSep ", " ownsList}"
+          echo "  Use: ${concatStringsSep ", " useList}"
 
           if [ -d "${gitbitsDir}/${name}.git" ]; then
             echo "  Already initialized"
           else
             conflicts=""
-            ${ownsChecks}
+            ${useChecks}
             if [ -n "$conflicts" ]; then
-              echo "  ERROR: Paths tracked by main repo but claimed by ${name}:$conflicts"
+              echo "  ERROR: Paths tracked by main repo but used by ${name}:$conflicts"
               echo "  Fix with: git rm --cached <path>"
               exit 1
             fi
 
             ${cloneCmd name injection}
-            ${sparseCheckoutSetup name sparseContent}
+            ${sparseCheckoutSetup name sparseContent excludeContent useList}
             echo "  Done"
           fi
         '';
 
-      body = concatStringsSep "\n" (mapAttrsToList perInjection injections);
+      body = concatStringsSep "\n" (map perInjection injections);
 
       footer = ''
 
@@ -115,7 +113,7 @@ let
 
     # Arguments
 
-    - `injections` (attrset): Map of injection name -> config
+    - `injections` (list): List of injection configs
 
     # Returns
 
@@ -124,12 +122,12 @@ let
   pullScript =
     injections:
     let
-      perInjection = name: injection: ''
-        echo "Pulling: ${name}"
-        ${pullCmd name injection} || echo "  Warning: pull failed for ${name}"
+      perInjection = injection: ''
+        echo "Pulling: ${injection.name}"
+        ${pullCmd injection.name injection} || echo "  Warning: pull failed for ${injection.name}"
       '';
 
-      body = concatStringsSep "\n" (mapAttrsToList perInjection injections);
+      body = concatStringsSep "\n" (map perInjection injections);
     in
     scriptHeader
     + ''
@@ -141,7 +139,7 @@ let
 
     # Arguments
 
-    - `injections` (attrset): Map of injection name -> config
+    - `injections` (list): List of injection configs
 
     # Returns
 
@@ -150,12 +148,12 @@ let
   pushScript =
     injections:
     let
-      perInjection = name: injection: ''
-        echo "Pushing: ${name}"
-        ${pushCmd name injection} || echo "  Warning: push failed for ${name}"
+      perInjection = injection: ''
+        echo "Pushing: ${injection.name}"
+        ${pushCmd injection.name injection} || echo "  Warning: push failed for ${injection.name}"
       '';
 
-      body = concatStringsSep "\n" (mapAttrsToList perInjection injections);
+      body = concatStringsSep "\n" (map perInjection injections);
     in
     scriptHeader
     + ''
@@ -169,7 +167,7 @@ let
 
     # Arguments
 
-    - `injections` (attrset): Map of injection name -> config
+    - `injections` (list): List of injection configs
 
     # Returns
 
@@ -178,15 +176,15 @@ let
   statusScript =
     injections:
     let
-      perInjection = name: injection: ''
-        echo "${name}:"
+      perInjection = injection: ''
+        echo "${injection.name}:"
         echo "  remote: ${injection.remote}"
-        echo "  owns: ${concatStringsSep ", " (injection.owns or [ ])}"
-        ${statusCmd name} 2>/dev/null | sed 's/^/  /' || echo "  (not initialized)"
+        echo "  use: ${concatStringsSep ", " (injection.use or [ ])}"
+        ${statusCmd injection.name} 2>/dev/null | sed 's/^/  /' || echo "  (not initialized)"
         echo ""
       '';
 
-      body = concatStringsSep "\n" (mapAttrsToList perInjection injections);
+      body = concatStringsSep "\n" (map perInjection injections);
     in
     scriptHeader
     + ''
@@ -221,7 +219,7 @@ let
 
     # Arguments
 
-    - `injections` (attrset): Map of injection name -> config
+    - `injections` (list): List of injection configs
 
     # Returns
 
@@ -230,7 +228,7 @@ let
   useScript =
     injections:
     let
-      injectionNames = builtins.attrNames injections;
+      injectionNames = map (inj: inj.name) injections;
       namesStr = concatStringsSep ", " injectionNames;
 
       perInjectionCase = name: ''

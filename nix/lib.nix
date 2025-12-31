@@ -8,14 +8,15 @@
 
   - **workspace**: A directory containing files from multiple git repos
   - **injection**: A repo whose files are "injected" into the workspace
-  - **owns**: Paths that an injection is responsible for tracking
+  - **use**: Paths to take from an injection
 
   # How It Works
 
   Each injected repo has its .git directory stored in `.gitbits/<name>.git`
-  with `GIT_DIR` and `GIT_WORK_TREE` used to operate on it. The main repo's
-  .gitignore excludes paths owned by injections, and each injection uses
-  sparse-checkout to only track its owned paths.
+  with `GIT_DIR` and `GIT_WORK_TREE` used to operate on it. Injections use
+  sparse-checkout to only track their used paths.
+
+  Injections are processed in list order - later ones override earlier ones.
 
   # Example
 
@@ -23,13 +24,13 @@
   let
     gitbits = import ./. { inherit lib; };
     config = gitbits.build {
-      injections = {
-        "galagit-lint" = {
-          remote = "git@github.com:Alb-O/galagit-lint.git";
-          branch = "main";
-          owns = [ "lint" "nix" "sgconfig.yml" ];
-        };
-      };
+      injections = [
+        {
+          name = "lintfra";
+          remote = "git@github.com:org/lintfra.git";
+          use = [ "lint/ast-rules" "nix/scripts" ];
+        }
+      ];
     };
   in
   {

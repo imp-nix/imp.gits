@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: git bits <command> [args]
 
 GITBITS_DIR=".gitbits"
-CONFIG_FILE=".gitbits.nix"
+CONFIG_FILE=".gitbits/config.nix"
 
 # Set by wrapper during nix build
 GITBITS_LIB="${GITBITS_LIB:-@gitbitsLib@}"
@@ -29,13 +29,16 @@ Context switching:
 
 Config file ($CONFIG_FILE):
   {
-    injections = {
-      my-lib = {
+    injections = [
+      {
+        name = "my-lib";
         remote = "https://github.com/org/lib.git";
-        owns = [ "lib" "tools" ];
-      };
-    };
+        use = [ "lib" "tools" ];
+      }
+    ];
   }
+
+Injections are applied in order - later entries override earlier ones.
 EOF
 }
 

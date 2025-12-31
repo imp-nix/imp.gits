@@ -78,15 +78,19 @@ let
 
     - `name` (string): Injection name
     - `sparseContent` (string): Sparse checkout file content
+    - `excludeContent` (string): Exclude file content for ignoring non-used paths
+    - `usePaths` (list): Paths the injection uses
 
     # Returns
 
     Shell command string.
   */
   sparseCheckoutSetup =
-    name: sparseContent:
+    name: sparseContent: excludeContent: usePaths:
     let
       gitDir = injectionGitDir name;
+      # Build a grep pattern to match files in use paths
+      usePatterns = builtins.concatStringsSep "\\|" (map (p: "^${p}\\(/\\|$\\)") usePaths);
     in
     ''
       ${gitEnv name} git config core.sparseCheckout true
@@ -94,7 +98,16 @@ let
       cat > ${escapeShellArg gitDir}/info/sparse-checkout << 'SPARSE_EOF'
       ${sparseContent}
       SPARSE_EOF
+      cat > ${escapeShellArg gitDir}/info/exclude << 'EXCLUDE_EOF'
+      ${excludeContent}
+      EXCLUDE_EOF
       ${gitEnv name} git checkout
+
+      # Mark files outside of use paths as assume-unchanged
+      # so git ignores changes to them in the worktree
+      ${gitEnv name} git ls-files | grep -v '${usePatterns}' | while read -r file; do
+        ${gitEnv name} git update-index --assume-unchanged "$file" 2>/dev/null || true
+      done
     '';
 
   /**
