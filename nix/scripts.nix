@@ -202,7 +202,10 @@ let
     '';
 
   /**
-    Generate force pull script (fetch + reset --hard).
+    Generate force pull script (fetch + checkout specific paths).
+
+    Only updates the paths specified in the injection's `use` list,
+    preserving any local files that aren't part of the injection.
 
     # Arguments
 
@@ -225,21 +228,20 @@ let
           sparseContent = sparseCheckoutPatterns injection;
           excludeContent = injectionExcludes injection;
           useList = injection.use or [ ];
+          # Escape each path for shell
+          usePaths = concatStringsSep " " (map lib.escapeShellArg useList);
         in
         ''
           echo "Force pulling: ${name}"
           ${fetchCmd name injection}
 
-          # Checkout all files from origin to clear any local modifications
-          # This is needed before sparse-checkout can properly exclude files
-          ${gitEnv name} git checkout origin/${lib.escapeShellArg branch} -- . 2>/dev/null || true
-
-          # Update sparse-checkout to new paths
+          # Update sparse-checkout config first
           ${sparseCheckoutSetup name sparseContent excludeContent useList}
 
-          # Now reset to origin (should be clean now)
-          ${gitEnv name} git reset --hard origin/${lib.escapeShellArg branch}
-          echo "  Reset to origin/${branch}"
+          # Force checkout only the specific paths from the injection
+          # This preserves local files that aren't part of the injection
+          ${gitEnv name} git checkout -f origin/${lib.escapeShellArg branch} -- ${usePaths}
+          echo "  Updated: ${concatStringsSep ", " useList}"
         '';
 
       body = concatStringsSep "\n" (map perInjection injections);
