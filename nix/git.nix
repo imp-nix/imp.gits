@@ -13,25 +13,48 @@ let
   gitsDir = ".imp/gits";
 
   /**
-    Generate sparse checkout init command for the main repo (cone mode).
+    Generate sparse checkout init command for the main repo.
 
     # Arguments
 
-    - `paths` (list): List of directory paths to include
+    - `config` (attrset or list): Sparse checkout configuration
+      - If list: cone mode with directory paths
+      - If attrset: { mode = "cone"|"no-cone"; paths|patterns = [...]; }
 
     # Returns
 
     Shell command string.
   */
   mainSparseCheckoutInit =
-    paths:
+    config:
     let
-      pathArgs = concatStringsSep " " (map escapeShellArg paths);
+      # Normalize config to attrset form
+      normalized =
+        if builtins.isList config then
+          {
+            mode = "cone";
+            paths = config;
+          }
+        else
+          config;
+
+      mode = normalized.mode or "cone";
+      isCone = mode == "cone";
+
+      # For cone mode, use paths; for no-cone, use patterns
+      items = if isCone then normalized.paths or [ ] else normalized.patterns or [ ];
+      itemArgs = concatStringsSep " " (map escapeShellArg items);
     in
-    ''
-      git sparse-checkout init --cone
-      git sparse-checkout set ${pathArgs}
-    '';
+    if isCone then
+      ''
+        git sparse-checkout init --cone
+        git sparse-checkout set ${itemArgs}
+      ''
+    else
+      ''
+        git sparse-checkout init --no-cone
+        git sparse-checkout set --no-cone ${itemArgs}
+      '';
 
   /**
     Generate sparse checkout status command for the main repo.

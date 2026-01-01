@@ -40,6 +40,48 @@ in
     expected = false;
   };
 
+  manifest."validateSparse accepts no-cone attrset" = {
+    expr =
+      (gits.validateSparse {
+        mode = "no-cone";
+        patterns = [
+          "/book/"
+          "/docs/"
+        ];
+      }).valid;
+    expected = true;
+  };
+
+  manifest."validateSparse accepts cone attrset" = {
+    expr =
+      (gits.validateSparse {
+        mode = "cone";
+        paths = [
+          "src"
+          "lib"
+        ];
+      }).valid;
+    expected = true;
+  };
+
+  manifest."validateSparse rejects invalid mode" = {
+    expr =
+      (gits.validateSparse {
+        mode = "invalid";
+        paths = [ "src" ];
+      }).valid;
+    expected = false;
+  };
+
+  manifest."validateSparse rejects no-cone without patterns" = {
+    expr =
+      (gits.validateSparse {
+        mode = "no-cone";
+        paths = [ "src" ];
+      }).valid;
+    expected = false;
+  };
+
   manifest."validateConfig accepts sparse-only config" = {
     expr = (gits.validateConfig { sparse = [ "src" ]; }).valid;
     expected = true;

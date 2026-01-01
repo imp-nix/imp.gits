@@ -2,7 +2,7 @@
   Manifest validation for config.nix.
 
   Supports:
-  - `sparse`: list of directories for cone-mode sparse checkout of main repo
+  - `sparse`: sparse checkout config (list for cone mode, attrset for no-cone)
   - `injections`: list of injection configs for multi-repo composition
 */
 {
@@ -12,9 +12,11 @@ let
   inherit (builtins)
     all
     hasAttr
+    isAttrs
     isList
     isString
     length
+    elem
     ;
 
   inherit (lib)
@@ -25,9 +27,13 @@ let
   /**
     Validate sparse checkout configuration.
 
+    Accepts either:
+    - List of paths (cone mode)
+    - Attrset with mode and paths/patterns (explicit mode)
+
     # Arguments
 
-    - `sparse` (list): List of directory paths
+    - `sparse` (list or attrset): Sparse checkout configuration
 
     # Returns
 
@@ -36,11 +42,44 @@ let
   validateSparse =
     sparse:
     let
-      errors =
-        (if !isList sparse then [ "sparse must be a list of directory paths" ] else [ ])
-        ++ (
-          if isList sparse && !all isString sparse then [ "all entries in sparse must be strings" ] else [ ]
-        );
+      # List format = cone mode shorthand
+      listErrors =
+        if isList sparse then
+          if !all isString sparse then [ "all entries in sparse list must be strings" ] else [ ]
+        else
+          [ ];
+
+      # Attrset format = explicit mode
+      attrsetErrors =
+        if isAttrs sparse then
+          let
+            mode = sparse.mode or "cone";
+            hasValidMode = elem mode [
+              "cone"
+              "no-cone"
+            ];
+            isCone = mode == "cone";
+
+            # Cone mode uses 'paths', no-cone uses 'patterns'
+            pathsKey = if isCone then "paths" else "patterns";
+            hasItems = hasAttr pathsKey sparse;
+            items = sparse.${pathsKey} or [ ];
+            itemsValid = isList items && all isString items;
+          in
+          (if !hasValidMode then [ "sparse.mode must be 'cone' or 'no-cone'" ] else [ ])
+          ++ (if !hasItems then [ "sparse.${pathsKey} is required for ${mode} mode" ] else [ ])
+          ++ (if hasItems && !itemsValid then [ "sparse.${pathsKey} must be a list of strings" ] else [ ])
+        else
+          [ ];
+
+      # Must be list or attrset
+      typeErrors =
+        if !isList sparse && !isAttrs sparse then
+          [ "sparse must be a list (cone mode) or attrset (explicit mode)" ]
+        else
+          [ ];
+
+      errors = typeErrors ++ listErrors ++ attrsetErrors;
     in
     {
       valid = errors == [ ];

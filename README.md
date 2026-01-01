@@ -75,7 +75,11 @@ imp-gits init
 
 ## Sparse Checkout
 
-The `sparse` option enables Git's cone-mode sparse checkout for the main repository. Only the specified directories will be checked out:
+The `sparse` option enables Git's sparse checkout for the main repository.
+
+### Cone Mode (default)
+
+Cone mode checks out entire directories. Root-level files are always included:
 
 ```nix
 {
@@ -83,7 +87,24 @@ The `sparse` option enables Git's cone-mode sparse checkout for the main reposit
 }
 ```
 
-After `imp-gits init`, only these directories will be present in your working tree.
+### No-Cone Mode
+
+No-cone mode uses gitignore-style patterns for precise control. No root files are included unless explicitly specified:
+
+```nix
+{
+  sparse = {
+    mode = "no-cone";
+    patterns = [
+      "/src/"
+      "/docs/"
+      "/README.md"  # explicitly include a root file
+    ];
+  };
+}
+```
+
+After `imp-gits init`, only matching paths will be present in your working tree.
 
 ## Injections
 
@@ -136,5 +157,4 @@ in {
 
 ## Limitations
 
-- Sparse checkout uses cone mode only (directory-based patterns)
 - Files tracked by main repo must be untracked before injection can claim them

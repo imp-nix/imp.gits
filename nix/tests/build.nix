@@ -117,4 +117,27 @@ in
       lib.hasInfix "sparse-checkout" result.scripts.init;
     expected = true;
   };
+
+  build."init script uses cone mode for list sparse" = {
+    expr =
+      let
+        result = gits.build { sparse = [ "src" ]; };
+      in
+      lib.hasInfix "--cone" result.scripts.init;
+    expected = true;
+  };
+
+  build."init script uses no-cone mode when specified" = {
+    expr =
+      let
+        result = gits.build {
+          sparse = {
+            mode = "no-cone";
+            patterns = [ "/book/" ];
+          };
+        };
+      in
+      lib.hasInfix "--no-cone" result.scripts.init;
+    expected = true;
+  };
 }

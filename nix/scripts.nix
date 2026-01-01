@@ -13,6 +13,8 @@ let
     map
     length
     hasAttr
+    isList
+    isAttrs
     ;
 
   inherit (manifest) validateConfig;
@@ -50,17 +52,39 @@ let
     config:
     let
       validation = validateConfig config;
-      sparse = config.sparse or [ ];
+      sparseConfig = config.sparse or null;
       injections = config.injections or [ ];
-      hasSparse = hasAttr "sparse" config && length sparse > 0;
+
+      # Normalize sparse config for display
+      sparseInfo =
+        if sparseConfig == null then
+          null
+        else if isList sparseConfig then
+          {
+            mode = "cone";
+            items = sparseConfig;
+          }
+        else
+          {
+            mode = sparseConfig.mode or "cone";
+            items =
+              if (sparseConfig.mode or "cone") == "cone" then
+                sparseConfig.paths or [ ]
+              else
+                sparseConfig.patterns or [ ];
+          };
+
+      hasSparse = sparseInfo != null && length sparseInfo.items > 0;
       hasInjections = hasAttr "injections" config && length injections > 0;
 
       sparseSetup =
         if hasSparse then
           ''
-            echo "Setting up sparse checkout..."
-            echo "  paths: ${concatStringsSep ", " sparse}"
-            ${mainSparseCheckoutInit sparse}
+            echo "Setting up sparse checkout (${sparseInfo.mode} mode)..."
+            echo "  ${
+              if sparseInfo.mode == "cone" then "paths" else "patterns"
+            }: ${concatStringsSep ", " sparseInfo.items}"
+            ${mainSparseCheckoutInit sparseConfig}
             echo "  Done"
           ''
         else
@@ -267,9 +291,17 @@ let
   statusScript =
     config:
     let
-      sparse = config.sparse or [ ];
+      sparseConfig = config.sparse or null;
       injections = config.injections or [ ];
-      hasSparse = hasAttr "sparse" config && length sparse > 0;
+
+      # Check if sparse is configured (list or attrset with items)
+      hasSparse =
+        if sparseConfig == null then
+          false
+        else if isList sparseConfig then
+          length sparseConfig > 0
+        else
+          length (sparseConfig.paths or sparseConfig.patterns or [ ]) > 0;
 
       sparseStatus =
         if hasSparse then
