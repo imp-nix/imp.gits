@@ -125,10 +125,21 @@ let
   pullScript =
     injections:
     let
-      perInjection = injection: ''
-        echo "Pulling: ${injection.name}"
-        ${pullCmd injection.name injection} || echo "  Warning: pull failed for ${injection.name}"
-      '';
+      perInjection = injection:
+        let
+          name = injection.name;
+          sparseContent = sparseCheckoutPatterns injection;
+          excludeContent = injectionExcludes injection;
+          useList = injection.use or [ ];
+        in
+        ''
+          echo "Pulling: ${name}"
+          if ${pullCmd name injection}; then
+            ${sparseCheckoutSetup name sparseContent excludeContent useList}
+          else
+            echo "  Warning: pull failed for ${name}"
+          fi
+        '';
 
       body = concatStringsSep "\n" (map perInjection injections);
     in
@@ -153,12 +164,17 @@ let
     let
       perInjection = injection:
         let
+          name = injection.name;
           branch = injection.branch or "main";
+          sparseContent = sparseCheckoutPatterns injection;
+          excludeContent = injectionExcludes injection;
+          useList = injection.use or [ ];
         in
         ''
-          echo "Force pulling: ${injection.name}"
-          ${fetchCmd injection.name injection}
-          ${gitEnv injection.name} git reset --hard origin/${lib.escapeShellArg branch}
+          echo "Force pulling: ${name}"
+          ${fetchCmd name injection}
+          ${gitEnv name} git reset --hard origin/${lib.escapeShellArg branch}
+          ${sparseCheckoutSetup name sparseContent excludeContent useList}
           echo "  Reset to origin/${branch}"
         '';
 
