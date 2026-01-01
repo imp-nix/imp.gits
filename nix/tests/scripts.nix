@@ -1,25 +1,28 @@
 /**
-  Tests for script generation: initScript, pullScript, pushScript, statusScript.
+  Tests for script generation.
 */
 {
   lib,
   gitbits,
 }:
 let
-  injection = {
-    remote = "git@github.com:test/repo.git";
-    branch = "main";
-    owns = [
-      "lint"
-      "nix"
-    ];
-  };
+  injections = [
+    {
+      name = "test";
+      remote = "git@github.com:test/repo.git";
+      branch = "main";
+      use = [
+        "lint"
+        "nix"
+      ];
+    }
+  ];
 in
 {
   scripts."initScript generates valid bash" = {
     expr =
       let
-        script = gitbits.initScript { test = injection; };
+        script = gitbits.initScript injections;
       in
       lib.hasPrefix "#!/usr/bin/env bash" script && lib.hasInfix "set -euo pipefail" script;
     expected = true;
@@ -28,7 +31,7 @@ in
   scripts."initScript includes clone" = {
     expr =
       let
-        script = gitbits.initScript { test = injection; };
+        script = gitbits.initScript injections;
       in
       lib.hasInfix "git clone" script;
     expected = true;
@@ -37,7 +40,7 @@ in
   scripts."initScript creates .gitbits dir" = {
     expr =
       let
-        script = gitbits.initScript { test = injection; };
+        script = gitbits.initScript injections;
       in
       lib.hasInfix "mkdir -p .gitbits" script;
     expected = true;
@@ -46,25 +49,25 @@ in
   scripts."pullScript includes git pull" = {
     expr =
       let
-        script = gitbits.pullScript { test = injection; };
+        script = gitbits.pullScript injections;
       in
       lib.hasInfix "git pull" script;
     expected = true;
   };
 
-  scripts."pushScript includes warning" = {
+  scripts."pushScript includes prompt" = {
     expr =
       let
-        script = gitbits.pushScript { test = injection; };
+        script = gitbits.pushScript injections;
       in
-      lib.hasInfix "WARNING" script;
+      lib.hasInfix "Press Enter to continue" script;
     expected = true;
   };
 
   scripts."pushScript includes git push" = {
     expr =
       let
-        script = gitbits.pushScript { test = injection; };
+        script = gitbits.pushScript injections;
       in
       lib.hasInfix "git push" script;
     expected = true;
@@ -73,9 +76,9 @@ in
   scripts."statusScript shows remote info" = {
     expr =
       let
-        script = gitbits.statusScript { test = injection; };
+        script = gitbits.statusScript injections;
       in
-      lib.hasInfix "Remote:" script;
+      lib.hasInfix "remote:" script;
     expected = true;
   };
 

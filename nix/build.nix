@@ -55,7 +55,6 @@ let
     {
       inherit validation;
 
-      # Generated shell scripts
       scripts = {
         init = initScript injections;
         pull = pullScript injections;
@@ -65,7 +64,6 @@ let
         use = useScript injections;
       };
 
-      # Per-injection git wrappers (gitbits-<name>)
       wrappers = listToAttrs (
         map (inj: {
           name = inj.name;
@@ -73,7 +71,6 @@ let
         }) injections
       );
 
-      # Sparse checkout patterns per injection
       sparseCheckouts = listToAttrs (
         map (inj: {
           name = inj.name;
@@ -81,13 +78,8 @@ let
         }) injections
       );
 
-      # All paths used by injections
       usedPaths = allUsedPaths injections;
-
-      # List of injection names
       injectionNames = map (inj: inj.name) injections;
-
-      # Raw config for inspection
       inherit injections;
     };
 

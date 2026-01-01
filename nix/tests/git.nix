@@ -7,9 +7,10 @@
 }:
 let
   injection = {
+    name = "test";
     remote = "git@github.com:test/repo.git";
     branch = "main";
-    owns = [ "lint" ];
+    use = [ "lint" ];
   };
 in
 {

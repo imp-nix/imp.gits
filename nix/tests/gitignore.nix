@@ -7,30 +7,17 @@
 }:
 let
   injection = {
+    name = "test";
     remote = "git@github.com:test/repo.git";
-    owns = [
+    use = [
       "lint"
       "nix"
     ];
   };
 in
 {
-  gitignore."mainRepoIgnores includes .gitbits" = {
-    expr = lib.hasInfix ".gitbits/" (gitbits.mainRepoIgnores { test = injection; });
-    expected = true;
-  };
-
-  gitignore."mainRepoIgnores includes owned paths" = {
-    expr =
-      let
-        content = gitbits.mainRepoIgnores { test = injection; };
-      in
-      lib.hasInfix "/lint" content && lib.hasInfix "/nix" content;
-    expected = true;
-  };
-
   gitignore."injectionExcludes starts with wildcard" = {
-    expr = lib.hasPrefix "# imp.gitbits" (gitbits.injectionExcludes injection);
+    expr = lib.hasPrefix "*" (gitbits.injectionExcludes injection);
     expected = true;
   };
 
@@ -43,7 +30,7 @@ in
     expected = true;
   };
 
-  gitignore."sparseCheckoutPatterns has owned paths" = {
+  gitignore."sparseCheckoutPatterns has use paths" = {
     expr =
       let
         content = gitbits.sparseCheckoutPatterns injection;

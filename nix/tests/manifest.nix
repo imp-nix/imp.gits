@@ -1,5 +1,5 @@
 /**
-  Tests for manifest validation and ownership.
+  Tests for manifest validation.
 */
 {
   gitbits,
@@ -7,9 +7,10 @@
 }:
 let
   validInjection = {
+    name = "test";
     remote = "git@github.com:test/repo.git";
     branch = "main";
-    owns = [
+    use = [
       "lib"
       "src/utils"
     ];
@@ -17,119 +18,85 @@ let
 in
 {
   manifest."validates correct injection" = {
-    expr = (gitbits.validateInjection "test" validInjection).valid;
+    expr = (gitbits.validateInjection 0 validInjection).valid;
     expected = true;
+  };
+
+  manifest."rejects missing name" = {
+    expr =
+      (gitbits.validateInjection 0 {
+        remote = "git@github.com:test/repo.git";
+        use = [ "lib" ];
+      }).valid;
+    expected = false;
   };
 
   manifest."rejects missing remote" = {
     expr =
-      (gitbits.validateInjection "test" {
-        owns = [ "lib" ];
+      (gitbits.validateInjection 0 {
+        name = "test";
+        use = [ "lib" ];
       }).valid;
     expected = false;
   };
 
-  manifest."rejects missing owns" = {
+  manifest."rejects missing use" = {
     expr =
-      (gitbits.validateInjection "test" {
+      (gitbits.validateInjection 0 {
+        name = "test";
         remote = "git@github.com:test/repo.git";
       }).valid;
     expected = false;
   };
 
-  manifest."rejects empty owns" = {
+  manifest."rejects empty use" = {
     expr =
-      (gitbits.validateInjection "test" {
+      (gitbits.validateInjection 0 {
+        name = "test";
         remote = "git@github.com:test/repo.git";
-        owns = [ ];
+        use = [ ];
       }).valid;
     expected = false;
   };
 
-  manifest."detects path conflicts" = {
+  manifest."validateManifest accepts valid list" = {
     expr =
-      gitbits.detectConflicts {
-        a = {
-          remote = "git@github.com:test/a.git";
-          owns = [ "lib" ];
-        };
-        b = {
-          remote = "git@github.com:test/b.git";
-          owns = [ "lib/sub" ];
-        };
-      } != [ ];
+      (gitbits.validateManifest [
+        validInjection
+      ]).valid;
     expected = true;
   };
 
-  manifest."allows non-conflicting paths" = {
-    expr = gitbits.detectConflicts {
-      a = {
-        remote = "git@github.com:test/a.git";
-        owns = [ "lib" ];
-      };
-      b = {
-        remote = "git@github.com:test/b.git";
-        owns = [ "src" ];
-      };
-    };
-    expected = [ ];
-  };
-
-  manifest."pathsConflict detects nested" = {
-    expr = gitbits.pathsConflict "lib" "lib/sub";
-    expected = true;
-  };
-
-  manifest."pathsConflict detects equal" = {
-    expr = gitbits.pathsConflict "lib" "lib";
-    expected = true;
-  };
-
-  manifest."pathsConflict allows siblings" = {
-    expr = gitbits.pathsConflict "lib" "src";
+  manifest."validateManifest rejects non-list" = {
+    expr =
+      (gitbits.validateManifest {
+        test = validInjection;
+      }).valid;
     expected = false;
   };
 
-  manifest."allOwnedPaths collects all" = {
+  manifest."allUsedPaths collects all" = {
     expr = builtins.sort (a: b: a < b) (
-      gitbits.allOwnedPaths {
-        a = {
+      gitbits.allUsedPaths [
+        {
+          name = "a";
           remote = "x";
-          owns = [
+          use = [
             "lib"
             "docs"
           ];
-        };
-        b = {
+        }
+        {
+          name = "b";
           remote = "y";
-          owns = [ "src" ];
-        };
-      }
+          use = [ "src" ];
+        }
+      ]
     );
     expected = [
       "docs"
       "lib"
       "src"
     ];
-  };
-
-  manifest."pathOwner finds correct owner" = {
-    expr = gitbits.pathOwner {
-      lint = {
-        remote = "x";
-        owns = [ "lint" ];
-      };
-    } "lint/foo.nix";
-    expected = "lint";
-  };
-
-  manifest."pathOwner returns null for unowned" = {
-    expr = gitbits.pathOwner {
-      lint = {
-        remote = "x";
-        owns = [ "lint" ];
-      };
-    } "src/main.py";
-    expected = null;
   };
 }
