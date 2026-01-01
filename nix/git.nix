@@ -42,7 +42,9 @@ let
       isCone = mode == "cone";
 
       # For cone mode, use paths; for no-cone, use patterns
-      items = if isCone then normalized.paths or [ ] else normalized.patterns or [ ];
+      # Always include .imp/ so the config file is tracked
+      userItems = if isCone then normalized.paths or [ ] else normalized.patterns or [ ];
+      items = if isCone then userItems ++ [ ".imp" ] else userItems ++ [ "/.imp/" ];
       itemArgs = concatStringsSep " " (map escapeShellArg items);
     in
     if isCone then
