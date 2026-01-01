@@ -80,7 +80,9 @@ let
           echo "  Use: ${concatStringsSep ", " useList}"
 
           if [ -d "${gitbitsDir}/${name}.git" ]; then
-            echo "  Already initialized"
+            echo "  Updating sparse-checkout..."
+            ${sparseCheckoutSetup name sparseContent excludeContent useList}
+            echo "  Done"
           else
             conflicts=""
             ${useChecks}
