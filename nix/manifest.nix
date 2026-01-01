@@ -1,8 +1,9 @@
 /**
-  Manifest validation for injection configurations.
+  Manifest validation for config.nix.
 
-  Injections are processed in list order - later injections override earlier ones
-  for conflicting paths.
+  Supports:
+  - `sparse`: list of directories for cone-mode sparse checkout of main repo
+  - `injections`: list of injection configs for multi-repo composition
 */
 {
   lib,
@@ -20,6 +21,31 @@ let
     flatten
     imap0
     ;
+
+  /**
+    Validate sparse checkout configuration.
+
+    # Arguments
+
+    - `sparse` (list): List of directory paths
+
+    # Returns
+
+    Attrset with `valid` boolean and `errors` list.
+  */
+  validateSparse =
+    sparse:
+    let
+      errors =
+        (if !isList sparse then [ "sparse must be a list of directory paths" ] else [ ])
+        ++ (
+          if isList sparse && !all isString sparse then [ "all entries in sparse must be strings" ] else [ ]
+        );
+    in
+    {
+      valid = errors == [ ];
+      inherit errors;
+    };
 
   /**
     Validate an injection configuration.
@@ -92,11 +118,7 @@ let
   validateManifest =
     injections:
     let
-      listCheck =
-        if !isList injections then
-          [ "injections must be a list" ]
-        else
-          [ ];
+      listCheck = if !isList injections then [ "injections must be a list" ] else [ ];
       validationResults = if isList injections then imap0 validateInjection injections else [ ];
       validationErrors = flatten (map (r: r.errors) validationResults);
       allErrors = listCheck ++ validationErrors;
@@ -119,11 +141,37 @@ let
   */
   allUsedPaths = injections: flatten (map (inj: inj.use or [ ]) injections);
 
+  /**
+    Validate a complete config.
+
+    # Arguments
+
+    - `config` (attrset): Config with optional `sparse` and `injections`
+
+    # Returns
+
+    Attrset with `valid` boolean and `errors` list.
+  */
+  validateConfig =
+    config:
+    let
+      sparseErrors = if hasAttr "sparse" config then (validateSparse config.sparse).errors else [ ];
+      injectionErrors =
+        if hasAttr "injections" config then (validateManifest config.injections).errors else [ ];
+      allErrors = sparseErrors ++ injectionErrors;
+    in
+    {
+      valid = allErrors == [ ];
+      errors = allErrors;
+    };
+
 in
 {
   inherit
+    validateSparse
     validateInjection
     validateManifest
+    validateConfig
     allUsedPaths
     ;
 }

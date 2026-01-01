@@ -1,16 +1,51 @@
 /**
-  Git command generation for multi-repo workspace.
+  Git command generation for sparse checkout and multi-repo workspace.
 */
 {
   lib,
 }:
 let
-  inherit (lib) escapeShellArg;
+  inherit (lib) escapeShellArg concatStringsSep;
 
   /**
     Directory where injection git dirs are stored.
   */
   gitsDir = ".imp/gits";
+
+  /**
+    Generate sparse checkout init command for the main repo (cone mode).
+
+    # Arguments
+
+    - `paths` (list): List of directory paths to include
+
+    # Returns
+
+    Shell command string.
+  */
+  mainSparseCheckoutInit =
+    paths:
+    let
+      pathArgs = concatStringsSep " " (map escapeShellArg paths);
+    in
+    ''
+      git sparse-checkout init --cone
+      git sparse-checkout set ${pathArgs}
+    '';
+
+  /**
+    Generate sparse checkout status command for the main repo.
+
+    # Returns
+
+    Shell command string.
+  */
+  mainSparseCheckoutStatus = ''
+    if git sparse-checkout list >/dev/null 2>&1; then
+      echo "sparse-checkout:"
+      git sparse-checkout list | sed 's/^/  /'
+    fi
+  '';
 
   /**
     Get the git directory path for an injection.
@@ -230,6 +265,8 @@ in
 {
   inherit
     gitsDir
+    mainSparseCheckoutInit
+    mainSparseCheckoutStatus
     injectionGitDir
     gitEnv
     cloneCmd

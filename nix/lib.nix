@@ -1,22 +1,20 @@
 /**
-  imp.gits - Multi-repo workspace composition.
+  imp.gits - Declarative sparse checkout and multi-repo workspace composition.
 
-  Mix files from multiple git repositories into a single workspace,
-  with each repo maintaining its own history and remote sync capability.
+  Configure sparse checkout for your main repo and/or inject files from
+  multiple git repositories into a single workspace.
 
   # Core Concepts
 
-  - **workspace**: A directory containing files from multiple git repos
+  - **sparse**: Cone-mode sparse checkout paths for the main repo
   - **injection**: A repo whose files are "injected" into the workspace
   - **use**: Paths to take from an injection
 
   # How It Works
 
-  Each injected repo has its .git directory stored in `.gits/<name>.git`
-  with `GIT_DIR` and `GIT_WORK_TREE` used to operate on it. Injections use
-  sparse-checkout to only track their used paths.
-
-  Injections are processed in list order - later ones override earlier ones.
+  Sparse checkout uses Git's cone mode for efficient directory-based filtering.
+  Each injected repo has its .git directory stored in `.imp/gits/<name>.git`
+  with `GIT_DIR` and `GIT_WORK_TREE` used to operate on it.
 
   # Example
 
@@ -24,6 +22,7 @@
   let
     gits = import ./. { inherit lib; };
     config = gits.build {
+      sparse = [ "src" "lib" ];
       injections = [
         {
           name = "lintfra";

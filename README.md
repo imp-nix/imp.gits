@@ -1,6 +1,6 @@
-# git-bits
+# imp-gits
 
-Multi-repo workspace composition. Mix files from multiple git repositories into a single directory, with each repo maintaining its own history.
+Declarative sparse checkout and multi-repo workspace composition for Git.
 
 ## Installation
 
@@ -18,10 +18,14 @@ Or in a flake:
 
 ## Quick Start
 
-1. Create `.imp/gits/config.nix` in your repo:
+Create `.imp/gits/config.nix` in your repo:
 
 ```nix
 {
+  # Sparse checkout for the main repo (cone mode - directories only)
+  sparse = [ "src" "lib" "docs" ];
+
+  # Optional: inject files from other repos
   injections = [
     {
       name = "my-lib";
@@ -32,43 +36,58 @@ Or in a flake:
 }
 ```
 
-2. Initialize:
+Initialize:
 
 ```bash
-git bits init
-```
-
-3. Switch contexts:
-
-```bash
-# bash/zsh
-eval "$(git bits use my-lib)"
-git log                          # sees my-lib history
-eval "$(git bits use main)"      # switch back
-
-# fish
-eval (git bits use my-lib)
-eval (git bits exit)         # exit any context
-
-# nushell
-git bits use my-lib | from json | load-env
+imp-gits init
 ```
 
 ## Commands
 
-| Command               | Description                              |
-| --------------------- | ---------------------------------------- |
-| `git bits init`       | Clone injections and configure workspace |
-| `git bits status`     | Show status of all repos                 |
-| `git bits pull`       | Pull updates for all injections          |
-| `git bits push`       | Push changes to injection remotes        |
-| `git bits use <name>` | Output shell commands to switch context  |
-| `git bits exit`       | Exit injection context                   |
-| `git bits list`       | List available contexts                  |
+| Command                   | Description                                   |
+| ------------------------- | --------------------------------------------- |
+| `imp-gits init`           | Set up sparse checkout and/or injections      |
+| `imp-gits status`         | Show status of sparse checkout and injections |
+| `imp-gits pull [--force]` | Pull updates for all injections               |
+| `imp-gits push`           | Push changes to injection remotes             |
+| `imp-gits use <name>`     | Switch git context to an injection            |
+| `imp-gits exit`           | Exit injection context                        |
+| `imp-gits list`           | List available contexts                       |
 
-## How It Works
+## Config Options
 
-Each injection's `.git` is stored in `.imp/gits/<name>.git`. The `.imp/gits/` directory is self-ignoring (via internal `.gitignore`) except for `config.nix`. Injections use sparse-checkout to track only their used paths.
+```nix
+{
+  # Sparse checkout paths for main repo (cone mode)
+  sparse = [ "src" "lib" ];
+
+  # Inject files from other repositories
+  injections = [
+    {
+      name = "...";          # required: injection identifier
+      remote = "...";        # required: git remote URL
+      branch = "main";       # optional: branch to track (default: main)
+      use = [ "path" ... ];  # required: paths to take from this injection
+    }
+  ];
+}
+```
+
+## Sparse Checkout
+
+The `sparse` option enables Git's cone-mode sparse checkout for the main repository. Only the specified directories will be checked out:
+
+```nix
+{
+  sparse = [ "src" "docs" "nix" ];
+}
+```
+
+After `imp-gits init`, only these directories will be present in your working tree.
+
+## Injections
+
+Injections allow mixing files from multiple repositories. Each injection's `.git` is stored in `.imp/gits/<name>.git`:
 
 ```
 workspace/
@@ -82,22 +101,21 @@ workspace/
 └── tools/                   # From my-lib
 ```
 
-## Config Options
+Switch contexts to work with injection history:
 
-```nix
-{
-  injections = [
-    {
-      name = "...";          # required: injection identifier
-      remote = "...";        # required: git remote URL
-      branch = "main";       # optional: branch to track (default: main)
-      use = [ "path" ... ];  # required: paths to take from this injection
-    }
-  ];
-}
+```bash
+# bash/zsh
+eval "$(imp-gits use my-lib)"
+git log                          # sees my-lib history
+eval "$(imp-gits use main)"      # switch back
+
+# fish
+eval (imp-gits use my-lib)
+eval (imp-gits exit)
+
+# nushell
+imp-gits use my-lib | from json | load-env
 ```
-
-Injections are applied in order - later entries override earlier ones for conflicting paths.
 
 ## Nix Library
 
@@ -107,14 +125,16 @@ For programmatic use:
 let
   gits = import ./path/to/imp.gits { inherit lib; };
   config = gits.build {
+    sparse = [ "src" ];
     injections = [ /* ... */ ];
   };
 in {
   inherit (config.scripts) init pull push status use;
-  inherit (config) usedPaths validation;
+  inherit (config) sparse usedPaths validation;
 }
 ```
 
 ## Limitations
 
+- Sparse checkout uses cone mode only (directory-based patterns)
 - Files tracked by main repo must be untracked before injection can claim them

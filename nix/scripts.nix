@@ -1,5 +1,5 @@
 /**
-  Shell script generation for multi-repo workspace operations.
+  Shell script generation for sparse checkout and multi-repo workspace operations.
 */
 {
   lib,
@@ -8,12 +8,19 @@
   git,
 }:
 let
-  inherit (builtins) concatStringsSep map;
+  inherit (builtins)
+    concatStringsSep
+    map
+    length
+    hasAttr
+    ;
 
-  inherit (manifest) validateManifest;
+  inherit (manifest) validateConfig;
   inherit (gitignore) sparseCheckoutPatterns injectionExcludes;
   inherit (git)
     gitsDir
+    mainSparseCheckoutInit
+    mainSparseCheckoutStatus
     cloneCmd
     sparseCheckoutSetup
     fetchCmd
@@ -29,33 +36,50 @@ let
   '';
 
   /**
-    Generate initialization script.
-
-    Sets up .imp/gits directory, clones all injections with sparse checkout.
-    Injections are processed in order - later ones override earlier ones.
+    Generate initialization script for sparse checkout and/or injections.
 
     # Arguments
 
-    - `injections` (list): List of injection configs
+    - `config` (attrset): Config with optional `sparse` and `injections`
 
     # Returns
 
     Shell script string.
   */
   initScript =
-    injections:
+    config:
     let
-      validation = validateManifest injections;
+      validation = validateConfig config;
+      sparse = config.sparse or [ ];
+      injections = config.injections or [ ];
+      hasSparse = hasAttr "sparse" config && length sparse > 0;
+      hasInjections = hasAttr "injections" config && length injections > 0;
 
-      setupDir = ''
-        echo "Setting up imp.gits workspace..."
-        mkdir -p ${gitsDir}/tmp
-        cat > ${gitsDir}/.gitignore << 'EOF'
-        *
-        !.gitignore
-        !config.nix
-        EOF
-      '';
+      sparseSetup =
+        if hasSparse then
+          ''
+            echo "Setting up sparse checkout..."
+            echo "  paths: ${concatStringsSep ", " sparse}"
+            ${mainSparseCheckoutInit sparse}
+            echo "  Done"
+          ''
+        else
+          "";
+
+      setupDir =
+        if hasInjections then
+          ''
+            echo ""
+            echo "Setting up injections..."
+            mkdir -p ${gitsDir}/tmp
+            cat > ${gitsDir}/.gitignore << 'EOF'
+            *
+            !.gitignore
+            !config.nix
+            EOF
+          ''
+        else
+          "";
 
       perInjection =
         injection:
@@ -98,34 +122,37 @@ let
           fi
         '';
 
-      body = concatStringsSep "\n" (map perInjection injections);
+      injectionsBody = if hasInjections then concatStringsSep "\n" (map perInjection injections) else "";
 
       footer = ''
 
         echo ""
-        echo "Workspace initialized"
+        echo "Initialized"
       '';
     in
     if !validation.valid then
-      throw "Invalid injection configuration:\n${concatStringsSep "\n" validation.errors}"
+      throw "Invalid configuration:\n${concatStringsSep "\n" validation.errors}"
     else
-      scriptHeader + setupDir + body + footer;
+      scriptHeader + sparseSetup + setupDir + injectionsBody + footer;
 
   /**
     Generate pull script to update all injections from remotes.
 
     # Arguments
 
-    - `injections` (list): List of injection configs
+    - `config` (attrset): Config with optional `injections`
 
     # Returns
 
     Shell script string.
   */
   pullScript =
-    injections:
+    config:
     let
-      perInjection = injection:
+      injections = config.injections or [ ];
+
+      perInjection =
+        injection:
         let
           name = injection.name;
           sparseContent = sparseCheckoutPatterns injection;
@@ -153,16 +180,19 @@ let
 
     # Arguments
 
-    - `injections` (list): List of injection configs
+    - `config` (attrset): Config with optional `injections`
 
     # Returns
 
     Shell script string.
   */
   pullForceScript =
-    injections:
+    config:
     let
-      perInjection = injection:
+      injections = config.injections or [ ];
+
+      perInjection =
+        injection:
         let
           name = injection.name;
           branch = injection.branch or "main";
@@ -173,14 +203,14 @@ let
         ''
           echo "Force pulling: ${name}"
           ${fetchCmd name injection}
-          
+
           # Checkout all files from origin to clear any local modifications
           # This is needed before sparse-checkout can properly exclude files
           ${gitEnv name} git checkout origin/${lib.escapeShellArg branch} -- . 2>/dev/null || true
-          
+
           # Update sparse-checkout to new paths
           ${sparseCheckoutSetup name sparseContent excludeContent useList}
-          
+
           # Now reset to origin (should be clean now)
           ${gitEnv name} git reset --hard origin/${lib.escapeShellArg branch}
           echo "  Reset to origin/${branch}"
@@ -198,15 +228,17 @@ let
 
     # Arguments
 
-    - `injections` (list): List of injection configs
+    - `config` (attrset): Config with optional `injections`
 
     # Returns
 
     Shell script string.
   */
   pushScript =
-    injections:
+    config:
     let
+      injections = config.injections or [ ];
+
       perInjection = injection: ''
         echo "Pushing: ${injection.name}"
         ${pushCmd injection.name injection} || echo "  Warning: push failed for ${injection.name}"
@@ -222,19 +254,32 @@ let
     '';
 
   /**
-    Generate status script showing state of all repos.
+    Generate status script showing state of sparse checkout and injections.
 
     # Arguments
 
-    - `injections` (list): List of injection configs
+    - `config` (attrset): Config with optional `sparse` and `injections`
 
     # Returns
 
     Shell script string.
   */
   statusScript =
-    injections:
+    config:
     let
+      sparse = config.sparse or [ ];
+      injections = config.injections or [ ];
+      hasSparse = hasAttr "sparse" config && length sparse > 0;
+
+      sparseStatus =
+        if hasSparse then
+          ''
+            ${mainSparseCheckoutStatus}
+            echo ""
+          ''
+        else
+          "";
+
       perInjection = injection: ''
         echo "${injection.name}:"
         echo "  remote: ${injection.remote}"
@@ -243,14 +288,14 @@ let
         echo ""
       '';
 
-      body = concatStringsSep "\n" (map perInjection injections);
+      injectionsBody = concatStringsSep "\n" (map perInjection injections);
     in
     scriptHeader
     + ''
       echo "main:"
-      git status | sed 's/^/  /'
-      echo ""
-      ${body}
+      git status --short | sed 's/^/  /' || true
+      ${sparseStatus}
+      ${injectionsBody}
     '';
 
   /**
@@ -278,15 +323,16 @@ let
 
     # Arguments
 
-    - `injections` (list): List of injection configs
+    - `config` (attrset): Config with optional `injections`
 
     # Returns
 
     Shell script string.
   */
   useScript =
-    injections:
+    config:
     let
+      injections = config.injections or [ ];
       injectionNames = map (inj: inj.name) injections;
       namesStr = concatStringsSep ", " injectionNames;
 
@@ -326,7 +372,7 @@ let
       PARENT_SHELL=$(detect_shell)
 
       show_help() {
-        echo "Usage: eval \"\\\$(git bits use [context])\""
+        echo "Usage: eval \"\\\$(imp-gits use [context])\""
         echo ""
         echo "Contexts: main (default), ${namesStr}"
         echo ""

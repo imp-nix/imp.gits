@@ -1,5 +1,5 @@
 {
-  description = "Multi-repo workspace composition for Nix";
+  description = "Declarative sparse checkout and multi-repo workspace composition";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -43,11 +43,11 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in
         {
-          default = self.packages.${system}.git-bits;
+          default = self.packages.${system}.imp-gits;
 
-          git-bits = pkgs.stdenv.mkDerivation {
-            pname = "git-bits";
-            version = "0.1.0";
+          imp-gits = pkgs.stdenv.mkDerivation {
+            pname = "imp-gits";
+            version = "0.2.0";
             src = ./.;
 
             nativeBuildInputs = [ pkgs.makeWrapper ];
@@ -56,12 +56,12 @@
               mkdir -p $out/bin $out/lib
               cp -r nix src $out/lib/
 
-              substitute bin/git-bits $out/bin/git-bits \
+              substitute bin/imp-gits $out/bin/imp-gits \
                 --replace '@gitsLib@' "$out/lib/nix/lib.nix"
 
-              chmod +x $out/bin/git-bits
+              chmod +x $out/bin/imp-gits
 
-              wrapProgram $out/bin/git-bits \
+              wrapProgram $out/bin/imp-gits \
                 --prefix PATH : ${
                   lib.makeBinPath [
                     pkgs.nix
@@ -72,8 +72,8 @@
             '';
 
             meta = {
-              description = "Multi-repo workspace composition";
-              mainProgram = "git-bits";
+              description = "Declarative sparse checkout and multi-repo workspace composition";
+              mainProgram = "imp-gits";
             };
           };
         }

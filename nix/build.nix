@@ -1,5 +1,5 @@
 /**
-  High-level build API for gits configuration.
+  High-level build API for imp.gits configuration.
 */
 {
   manifest,
@@ -7,9 +7,9 @@
   scripts,
 }:
 let
-  inherit (builtins) listToAttrs map;
+  inherit (builtins) listToAttrs map hasAttr;
 
-  inherit (manifest) validateManifest allUsedPaths;
+  inherit (manifest) validateConfig allUsedPaths;
   inherit (gitignore) sparseCheckoutPatterns;
   inherit (scripts)
     initScript
@@ -22,11 +22,11 @@ let
     ;
 
   /**
-    Build a complete gits workspace configuration.
+    Build a complete imp.gits configuration.
 
     # Arguments
 
-    - `config` (attrset): Configuration with `injections` list
+    - `config` (attrset): Configuration with optional `sparse` and `injections`
 
     # Returns
 
@@ -36,6 +36,10 @@ let
 
     ```nix
     gits.build {
+      # Sparse checkout for the main repo
+      sparse = [ "src" "lib" ];
+
+      # Optional injections
       injections = [
         {
           name = "lintfra";
@@ -49,19 +53,20 @@ let
   build =
     config:
     let
+      sparse = config.sparse or [ ];
       injections = config.injections or [ ];
-      validation = validateManifest injections;
+      validation = validateConfig config;
     in
     {
       inherit validation;
 
       scripts = {
-        init = initScript injections;
-        pull = pullScript injections;
-        pull-force = pullForceScript injections;
-        push = pushScript injections;
-        status = statusScript injections;
-        use = useScript injections;
+        init = initScript config;
+        pull = pullScript config;
+        pull-force = pullForceScript config;
+        push = pushScript config;
+        status = statusScript config;
+        use = useScript config;
       };
 
       wrappers = listToAttrs (
@@ -78,6 +83,10 @@ let
         }) injections
       );
 
+      # Main repo sparse checkout paths
+      inherit sparse;
+
+      # Injection metadata
       usedPaths = allUsedPaths injections;
       injectionNames = map (inj: inj.name) injections;
       inherit injections;

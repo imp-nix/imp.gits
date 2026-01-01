@@ -2,6 +2,7 @@
   Tests for high-level build API.
 */
 {
+  lib,
   gits,
   ...
 }:
@@ -17,7 +18,7 @@ let
   };
 in
 {
-  build."returns complete config" = {
+  build."returns complete config with injections" = {
     expr =
       let
         result = gits.build { injections = [ injection ]; };
@@ -39,6 +40,37 @@ in
   build."handles empty config" = {
     expr = (gits.build { }).usedPaths;
     expected = [ ];
+  };
+
+  build."handles sparse-only config" = {
+    expr =
+      let
+        result = gits.build {
+          sparse = [
+            "src"
+            "lib"
+          ];
+        };
+      in
+      result.validation.valid
+      &&
+        result.sparse == [
+          "src"
+          "lib"
+        ];
+    expected = true;
+  };
+
+  build."handles combined sparse and injections" = {
+    expr =
+      let
+        result = gits.build {
+          sparse = [ "src" ];
+          injections = [ injection ];
+        };
+      in
+      result.validation.valid && result.sparse == [ "src" ] && builtins.length result.injections == 1;
+    expected = true;
   };
 
   build."collects injection names" = {
@@ -69,6 +101,20 @@ in
         result = gits.build { injections = [ injection ]; };
       in
       builtins.hasAttr "test" result.wrappers;
+    expected = true;
+  };
+
+  build."init script includes sparse checkout when configured" = {
+    expr =
+      let
+        result = gits.build {
+          sparse = [
+            "src"
+            "docs"
+          ];
+        };
+      in
+      lib.hasInfix "sparse-checkout" result.scripts.init;
     expected = true;
   };
 }

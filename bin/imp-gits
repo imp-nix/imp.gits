@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# git-bits: Multi-repo workspace composition
-# Usage: git bits <command> [args]
+# imp-gits: Declarative sparse checkout and multi-repo workspace composition
+# Usage: imp-gits <command> [args]
 
 GITS_DIR=".imp/gits"
 CONFIG_FILE=".imp/gits/config.nix"
@@ -12,11 +12,11 @@ GITS_LIB="${GITS_LIB:-@gitsLib@}"
 
 show_help() {
   cat <<EOF
-Usage: git bits <command> [args]
+Usage: imp-gits <command> [args]
 
 Commands:
-  init          Initialize workspace from $CONFIG_FILE
-  status        Show status of all repos
+  init          Initialize sparse checkout and/or injections from $CONFIG_FILE
+  status        Show status of sparse checkout and injections
   pull [--force] Pull updates for all injections (--force: reset to remote)
   push          Push changes to injection remotes
   use <name>    Switch git context to an injection (or 'main')
@@ -24,13 +24,12 @@ Commands:
   list          List available contexts
   help          Show this help
 
-Context switching:
-  bash/zsh:  eval "\$(git bits use <name>)"
-  fish:      eval (git bits use <name>)
-  nushell:   git bits use <name> | from json | load-env
-
 Config file ($CONFIG_FILE):
   {
+    # Sparse checkout for the main repo (cone mode - directories only)
+    sparse = [ "src" "lib" "docs" ];
+
+    # Optional: inject files from other repos
     injections = [
       {
         name = "my-lib";
@@ -162,7 +161,7 @@ case "${1:-help}" in
   -h|--help|help) show_help ;;
   *)
     echo "Unknown command: $1" >&2
-    echo "Run 'git bits help' for usage" >&2
+    echo "Run 'imp-gits help' for usage" >&2
     exit 1
     ;;
 esac

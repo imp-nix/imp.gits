@@ -1,6 +1,6 @@
 # imp.gits
 
-Multi-repo workspace composition via shared working directory with separate GIT_DIRs.
+Declarative sparse checkout and multi-repo workspace composition.
 
 ## Code Style
 

@@ -17,6 +17,53 @@ let
   };
 in
 {
+  manifest."validateSparse accepts valid list" = {
+    expr =
+      (gits.validateSparse [
+        "src"
+        "lib"
+      ]).valid;
+    expected = true;
+  };
+
+  manifest."validateSparse rejects non-list" = {
+    expr = (gits.validateSparse "src").valid;
+    expected = false;
+  };
+
+  manifest."validateSparse rejects non-string entries" = {
+    expr =
+      (gits.validateSparse [
+        "src"
+        123
+      ]).valid;
+    expected = false;
+  };
+
+  manifest."validateConfig accepts sparse-only config" = {
+    expr = (gits.validateConfig { sparse = [ "src" ]; }).valid;
+    expected = true;
+  };
+
+  manifest."validateConfig accepts injections-only config" = {
+    expr = (gits.validateConfig { injections = [ validInjection ]; }).valid;
+    expected = true;
+  };
+
+  manifest."validateConfig accepts combined config" = {
+    expr =
+      (gits.validateConfig {
+        sparse = [ "src" ];
+        injections = [ validInjection ];
+      }).valid;
+    expected = true;
+  };
+
+  manifest."validateConfig accepts empty config" = {
+    expr = (gits.validateConfig { }).valid;
+    expected = true;
+  };
+
   manifest."validates correct injection" = {
     expr = (gits.validateInjection 0 validInjection).valid;
     expected = true;
