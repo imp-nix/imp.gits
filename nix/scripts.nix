@@ -173,8 +173,15 @@ let
         ''
           echo "Force pulling: ${name}"
           ${fetchCmd name injection}
-          # Update sparse-checkout BEFORE reset to avoid conflicts with main repo files
+          
+          # Checkout all files from origin to clear any local modifications
+          # This is needed before sparse-checkout can properly exclude files
+          ${gitEnv name} git checkout origin/${lib.escapeShellArg branch} -- . 2>/dev/null || true
+          
+          # Update sparse-checkout to new paths
           ${sparseCheckoutSetup name sparseContent excludeContent useList}
+          
+          # Now reset to origin (should be clean now)
           ${gitEnv name} git reset --hard origin/${lib.escapeShellArg branch}
           echo "  Reset to origin/${branch}"
         '';
