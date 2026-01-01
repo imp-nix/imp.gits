@@ -2,6 +2,7 @@
   Manifest validation for config.nix.
 
   Supports:
+  - `target`: optional target directory (for external sparse checkout configs)
   - `sparse`: sparse checkout config (list for cone mode, attrset for no-cone)
   - `injections`: list of injection configs for multi-repo composition
 */
@@ -185,7 +186,7 @@ let
 
     # Arguments
 
-    - `config` (attrset): Config with optional `sparse` and `injections`
+    - `config` (attrset): Config with optional `target`, `sparse`, and `injections`
 
     # Returns
 
@@ -194,10 +195,15 @@ let
   validateConfig =
     config:
     let
+      targetErrors =
+        if hasAttr "target" config && !isString config.target then
+          [ "target must be a string (relative path to target repo)" ]
+        else
+          [ ];
       sparseErrors = if hasAttr "sparse" config then (validateSparse config.sparse).errors else [ ];
       injectionErrors =
         if hasAttr "injections" config then (validateManifest config.injections).errors else [ ];
-      allErrors = sparseErrors ++ injectionErrors;
+      allErrors = targetErrors ++ sparseErrors ++ injectionErrors;
     in
     {
       valid = allErrors == [ ];

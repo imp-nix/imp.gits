@@ -21,8 +21,8 @@ let
   inherit (gitignore) sparseCheckoutPatterns injectionExcludes;
   inherit (git)
     gitsDir
-    mainSparseCheckoutInit
-    mainSparseCheckoutStatus
+    sparseCheckoutInit
+    sparseCheckoutStatus
     cloneCmd
     sparseCheckoutSetup
     fetchCmd
@@ -53,6 +53,7 @@ let
     let
       validation = validateConfig config;
       sparseConfig = config.sparse or null;
+      target = config.target or null;
       injections = config.injections or [ ];
 
       # Normalize sparse config for display
@@ -76,15 +77,16 @@ let
 
       hasSparse = sparseInfo != null && length sparseInfo.items > 0;
       hasInjections = hasAttr "injections" config && length injections > 0;
+      targetLabel = if target != null then " for ${target}" else "";
 
       sparseSetup =
         if hasSparse then
           ''
-            echo "Setting up sparse checkout (${sparseInfo.mode} mode)..."
+            echo "Setting up sparse checkout${targetLabel} (${sparseInfo.mode} mode)..."
             echo "  ${
               if sparseInfo.mode == "cone" then "paths" else "patterns"
             }: ${concatStringsSep ", " sparseInfo.items}"
-            ${mainSparseCheckoutInit sparseConfig}
+            ${sparseCheckoutInit sparseConfig target}
             echo "  Done"
           ''
         else
@@ -292,6 +294,7 @@ let
     config:
     let
       sparseConfig = config.sparse or null;
+      target = config.target or null;
       injections = config.injections or [ ];
 
       # Check if sparse is configured (list or attrset with items)
@@ -306,7 +309,7 @@ let
       sparseStatus =
         if hasSparse then
           ''
-            ${mainSparseCheckoutStatus}
+            ${sparseCheckoutStatus target}
             echo ""
           ''
         else

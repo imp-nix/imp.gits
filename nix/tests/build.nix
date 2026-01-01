@@ -140,4 +140,31 @@ in
       lib.hasInfix "--no-cone" result.scripts.init;
     expected = true;
   };
+
+  build."init script uses target when specified" = {
+    expr =
+      let
+        result = gits.build {
+          target = "submodule";
+          sparse = {
+            mode = "no-cone";
+            patterns = [ "/docs/" ];
+          };
+        };
+      in
+      lib.hasInfix "git -C 'submodule'" result.scripts.init;
+    expected = true;
+  };
+
+  build."validates target is string" = {
+    expr =
+      let
+        result = gits.build {
+          target = 123;
+          sparse = [ "src" ];
+        };
+      in
+      result.validation.valid;
+    expected = false;
+  };
 }

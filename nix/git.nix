@@ -13,64 +13,89 @@ let
   gitsDir = ".imp/gits";
 
   /**
-    Generate sparse checkout init command for the main repo.
+    Generate sparse checkout init command.
 
     # Arguments
 
-    - `config` (attrset or list): Sparse checkout configuration
+    - `sparseConfig` (attrset or list): Sparse checkout configuration
       - If list: cone mode with directory paths
       - If attrset: { mode = "cone"|"no-cone"; paths|patterns = [...]; }
+    - `target` (string or null): Target directory (for external configs), or null for current repo
 
     # Returns
 
     Shell command string.
   */
-  mainSparseCheckoutInit =
-    config:
+  sparseCheckoutInit =
+    sparseConfig: target:
     let
       # Normalize config to attrset form
       normalized =
-        if builtins.isList config then
+        if builtins.isList sparseConfig then
           {
             mode = "cone";
-            paths = config;
+            paths = sparseConfig;
           }
         else
-          config;
+          sparseConfig;
 
       mode = normalized.mode or "cone";
       isCone = mode == "cone";
+      hasTarget = target != null;
 
       # For cone mode, use paths; for no-cone, use patterns
-      # Always include .imp/ so the config file is tracked
+      # Only include .imp/ if not targeting external repo (external repos don't have our config)
       userItems = if isCone then normalized.paths or [ ] else normalized.patterns or [ ];
-      items = if isCone then userItems ++ [ ".imp" ] else userItems ++ [ "/.imp/" ];
+      items =
+        if hasTarget then
+          userItems
+        else if isCone then
+          userItems ++ [ ".imp" ]
+        else
+          userItems ++ [ "/.imp/" ];
       itemArgs = concatStringsSep " " (map escapeShellArg items);
+
+      # Wrap commands to run in target directory if specified
+      gitCmd = if hasTarget then "git -C ${escapeShellArg target}" else "git";
     in
     if isCone then
       ''
-        git sparse-checkout init --cone
-        git sparse-checkout set ${itemArgs}
+        ${gitCmd} sparse-checkout init --cone
+        ${gitCmd} sparse-checkout set ${itemArgs}
       ''
     else
       ''
-        git sparse-checkout init --no-cone
-        git sparse-checkout set --no-cone ${itemArgs}
+        ${gitCmd} sparse-checkout init --no-cone
+        ${gitCmd} sparse-checkout set --no-cone ${itemArgs}
       '';
 
   /**
-    Generate sparse checkout status command for the main repo.
+    Generate sparse checkout status command.
+
+    # Arguments
+
+    - `target` (string or null): Target directory, or null for current repo
 
     # Returns
 
     Shell command string.
   */
-  mainSparseCheckoutStatus = ''
-    if git sparse-checkout list >/dev/null 2>&1; then
-      echo "sparse-checkout:"
-      git sparse-checkout list | sed 's/^/  /'
-    fi
-  '';
+  sparseCheckoutStatus =
+    target:
+    let
+      gitCmd = if target != null then "git -C ${escapeShellArg target}" else "git";
+    in
+    ''
+      if ${gitCmd} sparse-checkout list >/dev/null 2>&1; then
+        echo "sparse-checkout${if target != null then " (${target})" else ""}:"
+        ${gitCmd} sparse-checkout list | sed 's/^/  /'
+      fi
+    '';
+
+  /**
+    Backwards-compatible wrapper.
+  */
+  mainSparseCheckoutStatus = sparseCheckoutStatus null;
 
   /**
     Get the git directory path for an injection.
@@ -290,8 +315,8 @@ in
 {
   inherit
     gitsDir
-    mainSparseCheckoutInit
-    mainSparseCheckoutStatus
+    sparseCheckoutInit
+    sparseCheckoutStatus
     injectionGitDir
     gitEnv
     cloneCmd

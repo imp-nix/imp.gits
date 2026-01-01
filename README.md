@@ -106,6 +106,34 @@ No-cone mode uses gitignore-style patterns for precise control. No root files ar
 
 After `imp-gits init`, only matching paths will be present in your working tree.
 
+### External Target (for submodules)
+
+To configure sparse checkout for a submodule or external repo without modifying it, use the `target` field. Place the config in the parent directory:
+
+```
+parent-repo/
+├── .imp/
+│   └── gits/
+│       └── config.nix   # Config for the submodule
+└── submodule/           # Clean submodule, no local commits
+```
+
+```nix
+# .imp/gits/config.nix
+{
+  target = "submodule";  # Relative path to target repo
+  sparse = {
+    mode = "no-cone";
+    patterns = [
+      "/docs/"
+      "/src/"
+    ];
+  };
+}
+```
+
+This keeps the submodule pristine (no local commits needed) while the sparse checkout config lives in your parent repo.
+
 ## Injections
 
 Injections allow mixing files from multiple repositories. Each injection's `.git` is stored in `.imp/gits/<name>.git`:
