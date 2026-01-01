@@ -70,6 +70,7 @@ let
       ${gitEnv name} git config core.worktree "$(pwd)"
       ${gitEnv name} git config core.excludesFile /dev/null
       ${gitEnv name} git config advice.addIgnoredFile false
+      ${gitEnv name} git config advice.updateSparsePath false
     '';
 
   /**
