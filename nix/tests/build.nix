@@ -2,7 +2,7 @@
   Tests for high-level build API.
 */
 {
-  gitbits,
+  gits,
   ...
 }:
 let
@@ -20,7 +20,7 @@ in
   build."returns complete config" = {
     expr =
       let
-        result = gitbits.build { injections = [ injection ]; };
+        result = gits.build { injections = [ injection ]; };
       in
       builtins.attrNames result.scripts == [
         "init"
@@ -37,13 +37,13 @@ in
   };
 
   build."handles empty config" = {
-    expr = (gitbits.build { }).usedPaths;
+    expr = (gits.build { }).usedPaths;
     expected = [ ];
   };
 
   build."collects injection names" = {
     expr =
-      (gitbits.build {
+      (gits.build {
         injections = [
           {
             name = "a";
@@ -66,7 +66,7 @@ in
   build."generates wrappers for each injection" = {
     expr =
       let
-        result = gitbits.build { injections = [ injection ]; };
+        result = gits.build { injections = [ injection ]; };
       in
       builtins.hasAttr "test" result.wrappers;
     expected = true;

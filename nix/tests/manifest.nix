@@ -2,7 +2,7 @@
   Tests for manifest validation.
 */
 {
-  gitbits,
+  gits,
   ...
 }:
 let
@@ -18,13 +18,13 @@ let
 in
 {
   manifest."validates correct injection" = {
-    expr = (gitbits.validateInjection 0 validInjection).valid;
+    expr = (gits.validateInjection 0 validInjection).valid;
     expected = true;
   };
 
   manifest."rejects missing name" = {
     expr =
-      (gitbits.validateInjection 0 {
+      (gits.validateInjection 0 {
         remote = "git@github.com:test/repo.git";
         use = [ "lib" ];
       }).valid;
@@ -33,7 +33,7 @@ in
 
   manifest."rejects missing remote" = {
     expr =
-      (gitbits.validateInjection 0 {
+      (gits.validateInjection 0 {
         name = "test";
         use = [ "lib" ];
       }).valid;
@@ -42,7 +42,7 @@ in
 
   manifest."rejects missing use" = {
     expr =
-      (gitbits.validateInjection 0 {
+      (gits.validateInjection 0 {
         name = "test";
         remote = "git@github.com:test/repo.git";
       }).valid;
@@ -51,7 +51,7 @@ in
 
   manifest."rejects empty use" = {
     expr =
-      (gitbits.validateInjection 0 {
+      (gits.validateInjection 0 {
         name = "test";
         remote = "git@github.com:test/repo.git";
         use = [ ];
@@ -61,7 +61,7 @@ in
 
   manifest."validateManifest accepts valid list" = {
     expr =
-      (gitbits.validateManifest [
+      (gits.validateManifest [
         validInjection
       ]).valid;
     expected = true;
@@ -69,7 +69,7 @@ in
 
   manifest."validateManifest rejects non-list" = {
     expr =
-      (gitbits.validateManifest {
+      (gits.validateManifest {
         test = validInjection;
       }).valid;
     expected = false;
@@ -77,7 +77,7 @@ in
 
   manifest."allUsedPaths collects all" = {
     expr = builtins.sort (a: b: a < b) (
-      gitbits.allUsedPaths [
+      gits.allUsedPaths [
         {
           name = "a";
           remote = "x";

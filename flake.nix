@@ -57,7 +57,7 @@
               cp -r nix src $out/lib/
 
               substitute bin/git-bits $out/bin/git-bits \
-                --replace '@gitbitsLib@' "$out/lib/nix/lib.nix"
+                --replace '@gitsLib@' "$out/lib/nix/lib.nix"
 
               chmod +x $out/bin/git-bits
 

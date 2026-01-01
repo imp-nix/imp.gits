@@ -1,5 +1,5 @@
 /**
-  Entry point for imp.gitbits.
+  Entry point for imp.gits.
 
   Multi-repo workspace composition - mix files from multiple
   git repositories with each maintaining its own history.
@@ -8,8 +8,8 @@
 
   ```nix
   let
-    gitbits = import ./. { inherit lib; };
-    config = gitbits.build {
+    gits = import ./. { inherit lib; };
+    config = gits.build {
       injections = {
         "galagit-lint" = {
           remote = "git@github.com:Alb-O/galagit-lint.git";

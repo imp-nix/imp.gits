@@ -5,20 +5,20 @@ Multi-repo workspace composition. Mix files from multiple git repositories into 
 ## Installation
 
 ```bash
-nix profile install github:imp-nix/imp.gitbits
+nix profile install github:imp-nix/imp.gits
 ```
 
 Or in a flake:
 
 ```nix
 {
-  inputs.gitbits.url = "github:imp-nix/imp.gitbits";
+  inputs.gits.url = "github:imp-nix/imp.gits";
 }
 ```
 
 ## Quick Start
 
-1. Create `.gitbits/config.nix` in your repo:
+1. Create `.imp/gits/config.nix` in your repo:
 
 ```nix
 {
@@ -68,14 +68,15 @@ git bits use my-lib | from json | load-env
 
 ## How It Works
 
-Each injection's `.git` is stored in `.gitbits/<name>.git`. The `.gitbits/` directory is self-ignoring (via internal `.gitignore`) except for `config.nix`. Injections use sparse-checkout to track only their used paths.
+Each injection's `.git` is stored in `.imp/gits/<name>.git`. The `.imp/gits/` directory is self-ignoring (via internal `.gitignore`) except for `config.nix`. Injections use sparse-checkout to track only their used paths.
 
 ```
 workspace/
 ├── .git/                    # Main repo
-├── .gitbits/
-│   ├── config.nix           # Config (tracked)
-│   └── my-lib.git/          # Injection git dir (ignored)
+├── .imp/
+│   └── gits/
+│       ├── config.nix       # Config (tracked)
+│       └── my-lib.git/      # Injection git dir (ignored)
 ├── src/                     # Main repo
 ├── lib/                     # From my-lib
 └── tools/                   # From my-lib
@@ -104,8 +105,8 @@ For programmatic use:
 
 ```nix
 let
-  gitbits = import ./path/to/imp.gitbits { inherit lib; };
-  config = gitbits.build {
+  gits = import ./path/to/imp.gits { inherit lib; };
+  config = gits.build {
     injections = [ /* ... */ ];
   };
 in {

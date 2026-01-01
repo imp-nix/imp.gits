@@ -1,5 +1,5 @@
 /**
-  imp.gitbits - Multi-repo workspace composition.
+  imp.gits - Multi-repo workspace composition.
 
   Mix files from multiple git repositories into a single workspace,
   with each repo maintaining its own history and remote sync capability.
@@ -12,7 +12,7 @@
 
   # How It Works
 
-  Each injected repo has its .git directory stored in `.gitbits/<name>.git`
+  Each injected repo has its .git directory stored in `.gits/<name>.git`
   with `GIT_DIR` and `GIT_WORK_TREE` used to operate on it. Injections use
   sparse-checkout to only track their used paths.
 
@@ -22,8 +22,8 @@
 
   ```nix
   let
-    gitbits = import ./. { inherit lib; };
-    config = gitbits.build {
+    gits = import ./. { inherit lib; };
+    config = gits.build {
       injections = [
         {
           name = "lintfra";

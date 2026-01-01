@@ -1,13 +1,13 @@
 /**
-  Unit tests for imp.gitbits.
+  Unit tests for imp.gits.
 
   Run with: nix flake check
 */
 { lib }:
 let
-  gitbits = import ../lib.nix { inherit lib; };
+  gits = import ../lib.nix { inherit lib; };
   args = {
-    inherit lib gitbits;
+    inherit lib gits;
   };
 in
 (import ./manifest.nix args)

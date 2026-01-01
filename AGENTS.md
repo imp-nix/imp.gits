@@ -1,4 +1,4 @@
-# imp.gitbits
+# imp.gits
 
 Multi-repo workspace composition via shared working directory with separate GIT_DIRs.
 

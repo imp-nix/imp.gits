@@ -1,5 +1,5 @@
 /**
-  High-level build API for gitbits configuration.
+  High-level build API for gits configuration.
 */
 {
   manifest,
@@ -22,7 +22,7 @@ let
     ;
 
   /**
-    Build a complete gitbits workspace configuration.
+    Build a complete gits workspace configuration.
 
     # Arguments
 
@@ -35,7 +35,7 @@ let
     # Example
 
     ```nix
-    gitbits.build {
+    gits.build {
       injections = [
         {
           name = "lintfra";

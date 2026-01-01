@@ -4,11 +4,11 @@ set -euo pipefail
 # git-bits: Multi-repo workspace composition
 # Usage: git bits <command> [args]
 
-GITBITS_DIR=".gitbits"
-CONFIG_FILE=".gitbits/config.nix"
+GITS_DIR=".imp/gits"
+CONFIG_FILE=".imp/gits/config.nix"
 
 # Set by wrapper during nix build
-GITBITS_LIB="${GITBITS_LIB:-@gitbitsLib@}"
+GITS_LIB="${GITS_LIB:-@gitsLib@}"
 
 show_help() {
   cat <<EOF
@@ -63,9 +63,9 @@ eval_script() {
   nix-instantiate --eval --strict --json -E "
     let
       lib = import <nixpkgs/lib>;
-      gitbits = import $GITBITS_LIB { inherit lib; };
+      gits = import $GITS_LIB { inherit lib; };
       config = import ./$CONFIG_FILE;
-    in (gitbits.build config).scripts.$script_name
+    in (gits.build config).scripts.$script_name
   " 2>/dev/null | jq -r '.'
 }
 

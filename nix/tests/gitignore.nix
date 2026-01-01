@@ -3,7 +3,7 @@
 */
 {
   lib,
-  gitbits,
+  gits,
 }:
 let
   injection = {
@@ -17,14 +17,14 @@ let
 in
 {
   gitignore."injectionExcludes starts with wildcard" = {
-    expr = lib.hasPrefix "*" (gitbits.injectionExcludes injection);
+    expr = lib.hasPrefix "*" (gits.injectionExcludes injection);
     expected = true;
   };
 
   gitignore."injectionExcludes has negated patterns" = {
     expr =
       let
-        content = gitbits.injectionExcludes injection;
+        content = gits.injectionExcludes injection;
       in
       lib.hasInfix "!/lint" content && lib.hasInfix "!/nix" content;
     expected = true;
@@ -33,7 +33,7 @@ in
   gitignore."sparseCheckoutPatterns has use paths" = {
     expr =
       let
-        content = gitbits.sparseCheckoutPatterns injection;
+        content = gits.sparseCheckoutPatterns injection;
       in
       lib.hasInfix "/lint" content && lib.hasInfix "/nix" content;
     expected = true;

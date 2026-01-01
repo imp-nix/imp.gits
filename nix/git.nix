@@ -10,7 +10,7 @@ let
   /**
     Directory where injection git dirs are stored.
   */
-  gitbitsDir = ".gitbits";
+  gitsDir = ".imp/gits";
 
   /**
     Get the git directory path for an injection.
@@ -21,9 +21,9 @@ let
 
     # Returns
 
-    Path string like ".gitbits/foo.git"
+    Path string like ".imp/gits/foo.git"
   */
-  injectionGitDir = name: "${gitbitsDir}/${name}.git";
+  injectionGitDir = name: "${gitsDir}/${name}.git";
 
   /**
     Generate environment prefix for injection git operations.
@@ -34,7 +34,7 @@ let
 
     # Returns
 
-    Shell string like "GIT_DIR=.gitbits/foo.git GIT_WORK_TREE=."
+    Shell string like "GIT_DIR=.imp/gits/foo.git GIT_WORK_TREE=."
   */
   gitEnv = name: "GIT_DIR=${escapeShellArg (injectionGitDir name)} GIT_WORK_TREE=.";
 
@@ -56,7 +56,7 @@ let
       remote = injection.remote;
       branch = injection.branch or "main";
       gitDir = injectionGitDir name;
-      tmpDir = "${gitbitsDir}/tmp/${name}";
+      tmpDir = "${gitsDir}/tmp/${name}";
     in
     ''
       git clone \
@@ -229,7 +229,7 @@ let
 in
 {
   inherit
-    gitbitsDir
+    gitsDir
     injectionGitDir
     gitEnv
     cloneCmd

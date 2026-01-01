@@ -13,7 +13,7 @@ let
   inherit (manifest) validateManifest;
   inherit (gitignore) sparseCheckoutPatterns injectionExcludes;
   inherit (git)
-    gitbitsDir
+    gitsDir
     cloneCmd
     sparseCheckoutSetup
     fetchCmd
@@ -31,7 +31,7 @@ let
   /**
     Generate initialization script.
 
-    Sets up .gitbits directory, clones all injections with sparse checkout.
+    Sets up .imp/gits directory, clones all injections with sparse checkout.
     Injections are processed in order - later ones override earlier ones.
 
     # Arguments
@@ -48,9 +48,9 @@ let
       validation = validateManifest injections;
 
       setupDir = ''
-        echo "Setting up imp.gitbits workspace..."
-        mkdir -p ${gitbitsDir}/tmp
-        cat > ${gitbitsDir}/.gitignore << 'EOF'
+        echo "Setting up imp.gits workspace..."
+        mkdir -p ${gitsDir}/tmp
+        cat > ${gitsDir}/.gitignore << 'EOF'
         *
         !.gitignore
         !config.nix
@@ -79,7 +79,7 @@ let
           echo "  Remote: ${injection.remote}"
           echo "  Use: ${concatStringsSep ", " useList}"
 
-          if [ -d "${gitbitsDir}/${name}.git" ]; then
+          if [ -d "${gitsDir}/${name}.git" ]; then
             echo "  Updating sparse-checkout..."
             ${sparseCheckoutSetup name sparseContent excludeContent useList}
             echo "  Done"
