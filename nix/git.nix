@@ -69,6 +69,7 @@ let
       rm -rf ${escapeShellArg tmpDir}
       ${gitEnv name} git config core.worktree "$(pwd)"
       ${gitEnv name} git config core.excludesFile /dev/null
+      ${gitEnv name} git config advice.addIgnoredFile false
     '';
 
   /**
