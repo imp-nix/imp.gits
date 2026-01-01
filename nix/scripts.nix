@@ -173,8 +173,9 @@ let
         ''
           echo "Force pulling: ${name}"
           ${fetchCmd name injection}
-          ${gitEnv name} git reset --hard origin/${lib.escapeShellArg branch}
+          # Update sparse-checkout BEFORE reset to avoid conflicts with main repo files
           ${sparseCheckoutSetup name sparseContent excludeContent useList}
+          ${gitEnv name} git reset --hard origin/${lib.escapeShellArg branch}
           echo "  Reset to origin/${branch}"
         '';
 
