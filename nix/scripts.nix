@@ -16,6 +16,7 @@ let
     gitbitsDir
     cloneCmd
     sparseCheckoutSetup
+    fetchCmd
     pullCmd
     pushCmd
     statusCmd
@@ -126,6 +127,38 @@ let
         echo "Pulling: ${injection.name}"
         ${pullCmd injection.name injection} || echo "  Warning: pull failed for ${injection.name}"
       '';
+
+      body = concatStringsSep "\n" (map perInjection injections);
+    in
+    scriptHeader
+    + ''
+      ${body}
+    '';
+
+  /**
+    Generate force pull script (fetch + reset --hard).
+
+    # Arguments
+
+    - `injections` (list): List of injection configs
+
+    # Returns
+
+    Shell script string.
+  */
+  pullForceScript =
+    injections:
+    let
+      perInjection = injection:
+        let
+          branch = injection.branch or "main";
+        in
+        ''
+          echo "Force pulling: ${injection.name}"
+          ${fetchCmd injection.name injection}
+          ${gitEnv injection.name} git reset --hard origin/${lib.escapeShellArg branch}
+          echo "  Reset to origin/${branch}"
+        '';
 
       body = concatStringsSep "\n" (map perInjection injections);
     in
@@ -308,6 +341,7 @@ in
   inherit
     initScript
     pullScript
+    pullForceScript
     pushScript
     statusScript
     injectionGitWrapper

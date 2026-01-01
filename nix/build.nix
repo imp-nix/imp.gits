@@ -14,6 +14,7 @@ let
   inherit (scripts)
     initScript
     pullScript
+    pullForceScript
     pushScript
     statusScript
     injectionGitWrapper
@@ -58,6 +59,7 @@ let
       scripts = {
         init = initScript injections;
         pull = pullScript injections;
+        pull-force = pullForceScript injections;
         push = pushScript injections;
         status = statusScript injections;
         use = useScript injections;

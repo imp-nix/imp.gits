@@ -17,7 +17,7 @@ Usage: git bits <command> [args]
 Commands:
   init          Initialize workspace from $CONFIG_FILE
   status        Show status of all repos
-  pull          Pull updates for all injections
+  pull [--force] Pull updates for all injections (--force: reset to remote)
   push          Push changes to injection remotes
   use <name>    Switch git context to an injection (or 'main')
   exit          Exit injection context (alias for 'use main')
@@ -96,7 +96,11 @@ cmd_status() {
 cmd_pull() {
   require_config
   require_git
-  run_script "pull"
+  if [[ "${1:-}" == "--force" ]] || [[ "${1:-}" == "-f" ]]; then
+    run_script "pull-force"
+  else
+    run_script "pull"
+  fi
 }
 
 cmd_push() {
@@ -150,7 +154,7 @@ cmd_list() {
 case "${1:-help}" in
   init)   cmd_init ;;
   status) cmd_status ;;
-  pull)   cmd_pull ;;
+  pull)   cmd_pull "${2:-}" ;;
   push)   cmd_push ;;
   use)    cmd_use "${2:-}" ;;
   exit)   cmd_exit ;;
