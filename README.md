@@ -48,6 +48,7 @@ eval "$(git bits use main)"      # switch back
 
 # fish
 eval (git bits use my-lib)
+eval (git bits exit)         # exit any context
 
 # nushell
 git bits use my-lib | from json | load-env
@@ -62,6 +63,7 @@ git bits use my-lib | from json | load-env
 | `git bits pull`       | Pull updates for all injections          |
 | `git bits push`       | Push changes to injection remotes        |
 | `git bits use <name>` | Output shell commands to switch context  |
+| `git bits exit`       | Exit injection context                   |
 | `git bits list`       | List available contexts                  |
 
 ## How It Works

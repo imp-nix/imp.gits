@@ -20,6 +20,7 @@ Commands:
   pull          Pull updates for all injections
   push          Push changes to injection remotes
   use <name>    Switch git context to an injection (or 'main')
+  exit          Exit injection context (alias for 'use main')
   list          List available contexts
   help          Show this help
 
@@ -112,6 +113,33 @@ cmd_use() {
   bash -c "$script" -- "$context"
 }
 
+cmd_exit() {
+  # Detect parent shell by walking up process tree
+  detect_shell() {
+    local pid=$PPID
+    while [ "$pid" != "1" ] && [ -n "$pid" ]; do
+      local comm=$(cat /proc/$pid/comm 2>/dev/null || echo "")
+      case "$comm" in
+        fish|nu|bash|zsh) echo "$comm"; return ;;
+      esac
+      pid=$(cut -d' ' -f4 /proc/$pid/stat 2>/dev/null || echo "1")
+    done
+    echo "unknown"
+  }
+  local shell=$(detect_shell)
+  case "$shell" in
+    fish)
+      echo "set -e GIT_DIR; set -e GIT_WORK_TREE"
+      ;;
+    nu)
+      echo '{"GIT_DIR": null, "GIT_WORK_TREE": null}'
+      ;;
+    *)
+      echo "unset GIT_DIR GIT_WORK_TREE"
+      ;;
+  esac
+}
+
 cmd_list() {
   require_config
   local script
@@ -125,6 +153,7 @@ case "${1:-help}" in
   pull)   cmd_pull ;;
   push)   cmd_push ;;
   use)    cmd_use "${2:-}" ;;
+  exit)   cmd_exit ;;
   list)   cmd_list ;;
   -h|--help|help) show_help ;;
   *)
