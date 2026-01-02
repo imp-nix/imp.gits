@@ -178,6 +178,8 @@ let
       gitDir = injectionGitDir name;
       # Build a grep pattern to match files in use paths
       usePatterns = builtins.concatStringsSep "\\|" (map (p: "^${p}\\(/\\|$\\)") usePaths);
+      # Escape paths for shell
+      usePathsStr = concatStringsSep " " (map escapeShellArg usePaths);
     in
     ''
       ${gitEnv name} git config core.sparseCheckout true
@@ -188,7 +190,10 @@ let
       cat > ${escapeShellArg gitDir}/info/exclude << 'EXCLUDE_EOF'
       ${excludeContent}
       EXCLUDE_EOF
-      ${gitEnv name} git checkout
+
+      # Only checkout the specific use paths, not the entire sparse-checkout
+      # This prevents overwriting files in the worktree that aren't part of this injection
+      ${gitEnv name} git checkout HEAD -- ${usePathsStr}
 
       # Mark files outside of use paths as assume-unchanged
       # so git ignores changes to them in the worktree
