@@ -15,9 +15,11 @@ let
     hasAttr
     isList
     isAttrs
+    isString
+    attrNames
     ;
 
-  inherit (manifest) validateConfig;
+  inherit (manifest) validateConfig allBoilerplatePaths;
   inherit (gitignore) sparseCheckoutPatterns injectionExcludes;
   inherit (git)
     gitsDir
@@ -38,11 +40,92 @@ let
   '';
 
   /**
+    Generate sed substitution commands for template variables.
+
+    Uses @var@ syntax (nix-style substituteAll convention) which is valid
+    inside string literals in both nix and toml, allowing template files
+    to keep their native extensions and be formatted normally.
+
+    # Arguments
+
+    - `vars` (attrset): Template variables { name = "value"; }
+
+    # Returns
+
+    Shell command string with sed expressions.
+  */
+  templateSubstitutions =
+    vars:
+    let
+      varNames = attrNames vars;
+      sedExprs = map (name: "-e 's|@${name}@|${lib.escapeShellArg vars.${name}}|g'") varNames;
+    in
+    if varNames == [ ] then "cat" else "sed ${concatStringsSep " " sedExprs}";
+
+  /**
+    Generate boilerplate spawn script for an injection.
+
+    # Arguments
+
+    - `name` (string): Injection name
+    - `boilerplate` (list): List of boilerplate entries
+    - `vars` (attrset): Template variables
+
+    # Returns
+
+    Shell script fragment.
+  */
+  boilerplateSpawnScript =
+    name: boilerplate: vars:
+    let
+      normalizeEntry =
+        entry:
+        if isString entry then
+          {
+            src = entry;
+            dest = entry;
+          }
+        else
+          {
+            inherit (entry) src;
+            dest = entry.dest or entry.src;
+          };
+
+      entries = map normalizeEntry boilerplate;
+      sedCmd = templateSubstitutions vars;
+      hasVars = vars != { };
+
+      perEntry =
+        entry:
+        let
+          destDir = builtins.dirOf entry.dest;
+        in
+        ''
+          if [ -e ${lib.escapeShellArg entry.dest} ]; then
+            echo "    skip: ${entry.dest} (exists)"
+          else
+            ${if destDir != "." then "mkdir -p ${lib.escapeShellArg destDir}" else ""}
+            ${gitEnv name} git show HEAD:${lib.escapeShellArg entry.src} ${
+              if hasVars then "| ${sedCmd} " else ""
+            }> ${lib.escapeShellArg entry.dest}
+            echo "    created: ${entry.dest}"
+          fi
+        '';
+    in
+    if boilerplate == [ ] then
+      ""
+    else
+      ''
+        echo "  Spawning boilerplate files..."
+        ${concatStringsSep "\n" (map perEntry entries)}
+      '';
+
+  /**
     Generate initialization script for sparse checkout and/or injections.
 
     # Arguments
 
-    - `config` (attrset): Config with optional `sparse` and `injections`
+    - `config` (attrset): Config with optional `sparse`, `injections`, and `vars`
 
     # Returns
 
@@ -55,6 +138,7 @@ let
       sparseConfig = config.sparse or null;
       target = config.target or null;
       injections = config.injections or [ ];
+      vars = config.vars or { };
 
       # Normalize sparse config for display
       sparseInfo =
@@ -114,6 +198,9 @@ let
           sparseContent = sparseCheckoutPatterns injection;
           excludeContent = injectionExcludes injection;
           useList = injection.use or [ ];
+          boilerplate = injection.boilerplate or [ ];
+          hasUse = useList != [ ];
+          hasBoilerplate = boilerplate != [ ];
           useChecks = concatStringsSep "\n" (
             map (p: ''
               tracked=$(git ls-files ${lib.escapeShellArg p} 2>/dev/null || true)
@@ -122,28 +209,39 @@ let
               fi
             '') useList
           );
+          useSummary = if hasUse then "\n  Use: ${concatStringsSep ", " useList}" else "";
+          boilerplateSummary =
+            if hasBoilerplate then "\n  Boilerplate: ${toString (length boilerplate)} file(s)" else "";
         in
         ''
           echo ""
           echo "Initializing: ${name}"
-          echo "  Remote: ${injection.remote}"
-          echo "  Use: ${concatStringsSep ", " useList}"
+          echo "  Remote: ${injection.remote}${useSummary}${boilerplateSummary}"
 
           if [ -d "${gitsDir}/${name}.git" ]; then
             echo "  Updating sparse-checkout..."
-            ${sparseCheckoutSetup name sparseContent excludeContent useList}
+            ${if hasUse then sparseCheckoutSetup name sparseContent excludeContent useList else ""}
+            ${boilerplateSpawnScript name boilerplate vars}
             echo "  Done"
           else
-            conflicts=""
-            ${useChecks}
-            if [ -n "$conflicts" ]; then
-              echo "  ERROR: Paths tracked by main repo but used by ${name}:$conflicts"
-              echo "  Fix with: git rm --cached <path>"
-              exit 1
-            fi
+            ${
+              if hasUse then
+                ''
+                  conflicts=""
+                  ${useChecks}
+                  if [ -n "$conflicts" ]; then
+                    echo "  ERROR: Paths tracked by main repo but used by ${name}:$conflicts"
+                    echo "  Fix with: git rm --cached <path>"
+                    exit 1
+                  fi
+                ''
+              else
+                ""
+            }
 
             ${cloneCmd name injection}
-            ${sparseCheckoutSetup name sparseContent excludeContent useList}
+            ${if hasUse then sparseCheckoutSetup name sparseContent excludeContent useList else ""}
+            ${boilerplateSpawnScript name boilerplate vars}
             echo "  Done"
           fi
         '';

@@ -61,13 +61,23 @@ imp-gits init
   # Sparse checkout paths for main repo (cone mode)
   sparse = [ "src" "lib" ];
 
+  # Template variables for boilerplate substitution
+  vars = {
+    project_name = "my-project";
+    description = "My awesome project";
+  };
+
   # Inject files from other repositories
   injections = [
     {
       name = "...";          # required: injection identifier
       remote = "...";        # required: git remote URL
       branch = "main";       # optional: branch to track (default: main)
-      use = [ "path" ... ];  # required: paths to take from this injection
+      use = [ "path" ... ];  # paths continuously synced from injection
+      boilerplate = [        # files spawned once, then owned by you
+        "Cargo.toml"                                     # copied as-is (with var substitution if vars defined)
+        { src = "boilerplate/flake.nix"; dest = "flake.nix"; }  # custom dest
+      ];
     }
   ];
 }
@@ -182,6 +192,55 @@ in {
   inherit (config) sparse usedPaths validation;
 }
 ```
+
+## Boilerplate Files
+
+Boilerplate files are spawned once during `imp-gits init` and then owned by your repository. Unlike `use` paths which are continuously synced, boilerplate files are only created if they don't already exist.
+
+### Template Substitution
+
+Use `@var@` syntax for variable substitution (nix-style, like substituteAll). This syntax is valid inside string literals in both nix and toml, so template files can keep their native extensions and be formatted normally.
+
+```nix
+# flake.nix (in boilerplate repo)
+{
+  description = "@project_name@";
+}
+```
+
+```toml
+# Cargo.toml (in boilerplate repo)
+[package]
+name = "@crate_name@"
+```
+
+Define variables in your config:
+
+```nix
+{
+  vars = {
+    project_name = "my-app";
+    crate_name = "my-app";
+  };
+  injections = [{
+    name = "rust-boilerplate";
+    remote = "...";
+    boilerplate = [
+      { src = "boilerplate/flake.nix"; dest = "flake.nix"; }
+      { src = "boilerplate/Cargo.toml"; dest = "Cargo.toml"; }
+    ];
+  }];
+}
+```
+
+### Use vs Boilerplate
+
+| Aspect     | `use`          | `boilerplate`            |
+| ---------- | -------------- | ------------------------ |
+| Ownership  | Source repo    | Your repo                |
+| Updates    | Synced on pull | Never overwritten        |
+| Templating | No             | Yes (via `@var@` syntax) |
+| Purpose    | Shared tooling | Project scaffolding      |
 
 ## Limitations
 

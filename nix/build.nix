@@ -9,7 +9,7 @@
 let
   inherit (builtins) listToAttrs map hasAttr;
 
-  inherit (manifest) validateConfig allUsedPaths;
+  inherit (manifest) validateConfig allUsedPaths allBoilerplatePaths;
   inherit (gitignore) sparseCheckoutPatterns;
   inherit (scripts)
     initScript
@@ -26,7 +26,7 @@ let
 
     # Arguments
 
-    - `config` (attrset): Configuration with optional `sparse` and `injections`
+    - `config` (attrset): Configuration with optional `sparse`, `injections`, and `vars`
 
     # Returns
 
@@ -88,6 +88,7 @@ let
 
       # Injection metadata
       usedPaths = allUsedPaths injections;
+      boilerplatePaths = allBoilerplatePaths injections;
       injectionNames = map (inj: inj.name) injections;
       inherit injections;
     };

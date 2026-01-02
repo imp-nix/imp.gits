@@ -129,7 +129,28 @@ in
     expected = false;
   };
 
-  manifest."rejects missing use" = {
+  manifest."accepts injection with only boilerplate" = {
+    expr =
+      (gits.validateInjection 0 {
+        name = "test";
+        remote = "git@github.com:test/repo.git";
+        boilerplate = [ "Cargo.toml" ];
+      }).valid;
+    expected = true;
+  };
+
+  manifest."accepts injection with use and boilerplate" = {
+    expr =
+      (gits.validateInjection 0 {
+        name = "test";
+        remote = "git@github.com:test/repo.git";
+        use = [ "lib" ];
+        boilerplate = [ "Cargo.toml" ];
+      }).valid;
+    expected = true;
+  };
+
+  manifest."rejects injection without use or boilerplate" = {
     expr =
       (gits.validateInjection 0 {
         name = "test";
@@ -138,12 +159,42 @@ in
     expected = false;
   };
 
-  manifest."rejects empty use" = {
+  manifest."accepts boilerplate string entry" = {
     expr =
       (gits.validateInjection 0 {
         name = "test";
         remote = "git@github.com:test/repo.git";
-        use = [ ];
+        boilerplate = [
+          "Cargo.toml"
+          "README.md"
+        ];
+      }).valid;
+    expected = true;
+  };
+
+  manifest."accepts boilerplate attrset entry" = {
+    expr =
+      (gits.validateInjection 0 {
+        name = "test";
+        remote = "git@github.com:test/repo.git";
+        boilerplate = [
+          {
+            src = "template.toml.tmpl";
+            dest = "config.toml";
+          }
+        ];
+      }).valid;
+    expected = true;
+  };
+
+  manifest."rejects boilerplate entry without src" = {
+    expr =
+      (gits.validateInjection 0 {
+        name = "test";
+        remote = "git@github.com:test/repo.git";
+        boilerplate = [
+          { dest = "config.toml"; }
+        ];
       }).valid;
     expected = false;
   };
@@ -187,5 +238,83 @@ in
       "lib"
       "src"
     ];
+  };
+
+  manifest."allBoilerplatePaths collects string entries" = {
+    expr = gits.allBoilerplatePaths [
+      {
+        name = "test";
+        remote = "x";
+        boilerplate = [
+          "Cargo.toml"
+          "README.md"
+        ];
+      }
+    ];
+    expected = [
+      {
+        injection = "test";
+        src = "Cargo.toml";
+        dest = "Cargo.toml";
+      }
+      {
+        injection = "test";
+        src = "README.md";
+        dest = "README.md";
+      }
+    ];
+  };
+
+  manifest."allBoilerplatePaths respects custom dest" = {
+    expr = gits.allBoilerplatePaths [
+      {
+        name = "test";
+        remote = "x";
+        boilerplate = [
+          {
+            src = "boilerplate/Cargo.toml";
+            dest = "Cargo.toml";
+          }
+        ];
+      }
+    ];
+    expected = [
+      {
+        injection = "test";
+        src = "boilerplate/Cargo.toml";
+        dest = "Cargo.toml";
+      }
+    ];
+  };
+
+  manifest."validateVars accepts valid vars" = {
+    expr =
+      (gits.validateVars {
+        project_name = "test";
+        version = "1.0";
+      }).valid;
+    expected = true;
+  };
+
+  manifest."validateVars rejects non-string values" = {
+    expr = (gits.validateVars { count = 42; }).valid;
+    expected = false;
+  };
+
+  manifest."validateConfig accepts config with vars" = {
+    expr =
+      (gits.validateConfig {
+        vars = {
+          project_name = "test";
+        };
+        injections = [
+          {
+            name = "test";
+            remote = "x";
+            boilerplate = [ "Cargo.toml" ];
+          }
+        ];
+      }).valid;
+    expected = true;
   };
 }

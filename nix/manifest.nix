@@ -5,6 +5,7 @@
   - `target`: optional target directory (for external sparse checkout configs)
   - `sparse`: sparse checkout config (list for cone mode, attrset for no-cone)
   - `injections`: list of injection configs for multi-repo composition
+  - `vars`: template variables for boilerplate substitution
 */
 {
   lib,
@@ -88,6 +89,43 @@ let
     };
 
   /**
+    Validate a boilerplate entry.
+
+    # Arguments
+
+    - `prefix` (string): Error message prefix
+    - `idx` (int): Index in the boilerplate list
+    - `entry` (attrset or string): Boilerplate entry
+
+    # Returns
+
+    List of error strings.
+  */
+  validateBoilerplateEntry =
+    prefix: idx: entry:
+    let
+      entryPrefix = "${prefix}.boilerplate[${toString idx}]";
+    in
+    if isString entry then
+      [ ]
+    else if isAttrs entry then
+      (if !(hasAttr "src" entry) then [ "${entryPrefix}: missing 'src'" ] else [ ])
+      ++ (
+        if hasAttr "src" entry && !isString entry.src then
+          [ "${entryPrefix}: 'src' must be a string" ]
+        else
+          [ ]
+      )
+      ++ (
+        if hasAttr "dest" entry && !isString entry.dest then
+          [ "${entryPrefix}: 'dest' must be a string" ]
+        else
+          [ ]
+      )
+    else
+      [ "${entryPrefix}: must be a string or attrset with 'src'" ];
+
+  /**
     Validate an injection configuration.
 
     # Arguments
@@ -104,6 +142,16 @@ let
     let
       prefix = "injections[${toString idx}]";
       name = injection.name or "<unnamed>";
+      hasUse = hasAttr "use" injection;
+      hasBoilerplate = hasAttr "boilerplate" injection;
+      boilerplate = injection.boilerplate or [ ];
+      boilerplateErrors =
+        if hasBoilerplate && !isList boilerplate then
+          [ "${prefix} (${name}): 'boilerplate' must be a list" ]
+        else if hasBoilerplate && isList boilerplate then
+          flatten (imap0 (i: e: validateBoilerplateEntry "${prefix} (${name})" i e) boilerplate)
+        else
+          [ ];
       errors =
         (if !(hasAttr "name" injection) then [ "${prefix}: missing 'name'" ] else [ ])
         ++ (
@@ -119,25 +167,25 @@ let
           else
             [ ]
         )
-        ++ (if !(hasAttr "use" injection) then [ "${prefix} (${name}): missing 'use'" ] else [ ])
         ++ (
-          if hasAttr "use" injection && !isList injection.use then
+          if !hasUse && !hasBoilerplate then
+            [ "${prefix} (${name}): must have 'use' and/or 'boilerplate'" ]
+          else
+            [ ]
+        )
+        ++ (
+          if hasUse && !isList injection.use then
             [ "${prefix} (${name}): 'use' must be a list of paths" ]
           else
             [ ]
         )
         ++ (
-          if hasAttr "use" injection && isList injection.use && !all isString injection.use then
+          if hasUse && isList injection.use && !all isString injection.use then
             [ "${prefix} (${name}): all entries in 'use' must be strings" ]
           else
             [ ]
         )
-        ++ (
-          if hasAttr "use" injection && isList injection.use && injection.use == [ ] then
-            [ "${prefix} (${name}): 'use' cannot be empty" ]
-          else
-            [ ]
-        );
+        ++ boilerplateErrors;
     in
     {
       valid = errors == [ ];
@@ -182,11 +230,38 @@ let
   allUsedPaths = injections: flatten (map (inj: inj.use or [ ]) injections);
 
   /**
+    Validate vars (template variables) configuration.
+
+    # Arguments
+
+    - `vars` (attrset): Template variables
+
+    # Returns
+
+    Attrset with `valid` boolean and `errors` list.
+  */
+  validateVars =
+    vars:
+    let
+      errors =
+        if !isAttrs vars then
+          [ "vars must be an attrset" ]
+        else if !all isString (builtins.attrValues vars) then
+          [ "all values in vars must be strings" ]
+        else
+          [ ];
+    in
+    {
+      valid = errors == [ ];
+      inherit errors;
+    };
+
+  /**
     Validate a complete config.
 
     # Arguments
 
-    - `config` (attrset): Config with optional `target`, `sparse`, and `injections`
+    - `config` (attrset): Config with optional `target`, `sparse`, `injections`, and `vars`
 
     # Returns
 
@@ -203,20 +278,56 @@ let
       sparseErrors = if hasAttr "sparse" config then (validateSparse config.sparse).errors else [ ];
       injectionErrors =
         if hasAttr "injections" config then (validateManifest config.injections).errors else [ ];
-      allErrors = targetErrors ++ sparseErrors ++ injectionErrors;
+      varsErrors = if hasAttr "vars" config then (validateVars config.vars).errors else [ ];
+      allErrors = targetErrors ++ sparseErrors ++ injectionErrors ++ varsErrors;
     in
     {
       valid = allErrors == [ ];
       errors = allErrors;
     };
 
+  /**
+    Get all boilerplate paths from injections.
+
+    # Arguments
+
+    - `injections` (list): List of injection configs
+
+    # Returns
+
+    List of { injection, src, dest } records.
+  */
+  allBoilerplatePaths =
+    injections:
+    flatten (
+      map (
+        inj:
+        map (
+          entry:
+          let
+            # Normalize string to attrset form
+            normalized = if isString entry then { src = entry; } else entry;
+            src = normalized.src;
+            dest = normalized.dest or src;
+          in
+          {
+            injection = inj.name;
+            inherit src dest;
+          }
+        ) (inj.boilerplate or [ ])
+      ) injections
+    );
+
 in
 {
   inherit
     validateSparse
+    validateBoilerplateEntry
     validateInjection
     validateManifest
+    validateVars
     validateConfig
     allUsedPaths
+    allBoilerplatePaths
     ;
 }
