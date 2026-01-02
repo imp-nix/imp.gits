@@ -150,12 +150,12 @@ in
     expected = true;
   };
 
-  scripts."useScript outputs JSON for nushell" = {
+  scripts."useScript outputs record for nushell" = {
     expr =
       let
         script = gits.useScript config;
       in
-      lib.hasInfix ''print $'{"GIT_DIR":'' script;
+      lib.hasInfix "{GIT_DIR:" script && lib.hasInfix "GIT_WORK_TREE:" script;
     expected = true;
   };
 }

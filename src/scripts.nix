@@ -544,7 +544,7 @@ let
             let abs_git_dir = $"(pwd)/${injectionGitDir name}"
             match $parent_shell {
                 "fish" => { print $"set -gx GIT_DIR '($abs_git_dir)'; set -gx GIT_WORK_TREE '(pwd)'" }
-                "nu" => { print $'{"GIT_DIR": "($abs_git_dir)", "GIT_WORK_TREE": "(pwd)"}' }
+                "nu" => { {GIT_DIR: $abs_git_dir, GIT_WORK_TREE: (pwd)} }
                 _ => { print $"export GIT_DIR='($abs_git_dir)'; export GIT_WORK_TREE='(pwd)'" }
             }
         }
@@ -574,7 +574,7 @@ let
               "main" => {
                   match $parent_shell {
                       "fish" => { print "set -e GIT_DIR; set -e GIT_WORK_TREE" }
-                      "nu" => { print '{"GIT_DIR": null, "GIT_WORK_TREE": null}' }
+                      "nu" => { {GIT_DIR: null, GIT_WORK_TREE: null} }
                       _ => { print "unset GIT_DIR GIT_WORK_TREE" }
                   }
               }
