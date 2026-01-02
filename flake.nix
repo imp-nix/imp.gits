@@ -32,7 +32,7 @@
 
       forAllSystems = f: lib.genAttrs systems (system: f system);
 
-      coreLib = import ./nix/lib.nix { inherit lib; };
+      coreLib = import ./src/lib.nix { inherit lib; };
     in
     {
       lib = coreLib;
@@ -47,26 +47,33 @@
 
           imp-gits = pkgs.stdenv.mkDerivation {
             pname = "imp-gits";
-            version = "0.2.0";
+            version = "0.3.0";
             src = ./.;
 
             nativeBuildInputs = [ pkgs.makeWrapper ];
 
             installPhase = ''
               mkdir -p $out/bin $out/lib
-              cp -r nix src $out/lib/
+              cp -r src $out/lib/
 
-              substitute bin/imp-gits $out/bin/imp-gits \
-                --replace '@gitsLib@' "$out/lib/nix/lib.nix"
+              # Install the Nu script (named without .nu so help shows "imp-gits" not "imp-gits.nu")
+              substitute bin/imp-gits.nu $out/lib/imp-gits \
+                --replace '@gitsLib@' "$out/lib/src/lib.nix"
 
+              # Use system nushell (not pinned) so plugins match user's version
+              cat > $out/bin/imp-gits <<EOF
+              #!${pkgs.bash}/bin/bash
+              exec nu "$out/lib/imp-gits" "\$@"
+              EOF
               chmod +x $out/bin/imp-gits
 
               wrapProgram $out/bin/imp-gits \
+                --set GITS_LIB "$out/lib/src/lib.nix" \
                 --prefix PATH : ${
                   lib.makeBinPath [
                     pkgs.nix
-                    pkgs.jq
                     pkgs.git
+                    pkgs.bash
                   ]
                 }
             '';
@@ -97,7 +104,7 @@
               }
               ''
                 export HOME=$TMPDIR
-                nix-unit --expr 'import ${self}/nix/tests { lib = import ${nixpkgs}/lib; }'
+                nix-unit --expr 'import ${self}/tests { lib = import ${nixpkgs}/lib; }'
                 touch $out
               '';
         }
@@ -121,7 +128,13 @@
             buildInputs = with pkgs; [
               nil
               nixfmt-rfc-style
+              nushell
+              git
             ];
+
+            shellHook = ''
+              export GITS_LIB="$PWD/src/lib.nix"
+            '';
           };
         }
       );

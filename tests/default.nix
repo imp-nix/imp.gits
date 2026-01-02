@@ -5,7 +5,7 @@
 */
 { lib }:
 let
-  gits = import ../lib.nix { inherit lib; };
+  gits = import ../src/lib.nix { inherit lib; };
   args = {
     inherit lib gits;
   };
