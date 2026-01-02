@@ -169,22 +169,22 @@ def "main use" [
     let injection_names = ($config_info.injections | get name)
     
     if $list {
-        return ["main" ...$injection_names]
+        ["main" ...$injection_names] | to nuon
+    } else {
+        let ctx = $context | default "main"
+        let cwd = pwd
+        
+        let result = if $ctx == "main" {
+            {GIT_DIR: null, GIT_WORK_TREE: null}
+        } else if $ctx in $injection_names {
+            let abs_git_dir = [$cwd ".imp" "gits" $"($ctx).git"] | path join
+            {GIT_DIR: $abs_git_dir, GIT_WORK_TREE: $cwd}
+        } else {
+            error make {msg: $"Unknown context: ($ctx). Available: main, ($injection_names | str join ', ')"}
+        }
+        
+        $result | to nuon
     }
-    
-    let ctx = $context | default "main"
-    let cwd = pwd
-    
-    if $ctx == "main" {
-        return {GIT_DIR: null, GIT_WORK_TREE: null}
-    }
-    
-    if $ctx in $injection_names {
-        let abs_git_dir = [$cwd ".imp" "gits" $"($ctx).git"] | path join
-        return {GIT_DIR: $abs_git_dir, GIT_WORK_TREE: $cwd}
-    }
-    
-    error make {msg: $"Unknown context: ($ctx). Available: main, ($injection_names | str join ', ')"}
 }
 
 # Exit injection context (alias for `use main`)
@@ -193,7 +193,7 @@ def "main use" [
 @category git
 @example "Exit context" { imp-gits exit | load-env }
 def "main exit" [] {
-    {GIT_DIR: null, GIT_WORK_TREE: null}
+    {GIT_DIR: null, GIT_WORK_TREE: null} | to nuon
 }
 
 # List available contexts
@@ -203,7 +203,7 @@ def "main list" [] {
     require-config
     let config_info = get-config-info
     let injection_names = ($config_info.injections | get name)
-    ["main (default)" ...$injection_names]
+    ["main (default)" ...$injection_names] | to nuon
 }
 
 # Declarative sparse checkout and multi-repo workspace composition
