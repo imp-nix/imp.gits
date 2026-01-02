@@ -155,43 +155,55 @@ def "main push" []: nothing -> nothing {
 
 # Switch git context to an injection
 #
-# Outputs shell commands to eval.
+# Returns a record for load-env.
 @category git
-@example "Switch to injection (bash)" { eval "$(imp-gits use mylib)" }
-@example "Switch to injection (nu)" { imp-gits use mylib | from json | load-env }
-@example "Switch back to main" { imp-gits use main }
+@example "Switch to injection" { imp-gits use mylib | load-env }
+@example "Switch back to main" { imp-gits use main | load-env }
+@example "List contexts" { imp-gits use --list }
 def "main use" [
     context?: string  # Injection name or 'main' (default: main)
-]: nothing -> string {
+    --list (-l)       # List available contexts
+] {
     require-config
+    let config_info = get-config-info
+    let injection_names = ($config_info.injections | get name)
+    
+    if $list {
+        return ["main" ...$injection_names]
+    }
+    
     let ctx = $context | default "main"
-    let script = eval-script "use"
-    nu -c $script $ctx
+    let cwd = pwd
+    
+    if $ctx == "main" {
+        return {GIT_DIR: null, GIT_WORK_TREE: null}
+    }
+    
+    if $ctx in $injection_names {
+        let abs_git_dir = [$cwd ".imp" "gits" $"($ctx).git"] | path join
+        return {GIT_DIR: $abs_git_dir, GIT_WORK_TREE: $cwd}
+    }
+    
+    error make {msg: $"Unknown context: ($ctx). Available: main, ($injection_names | str join ', ')"}
 }
 
-# Exit injection context
+# Exit injection context (alias for `use main`)
 #
-# Outputs shell commands to unset GIT_DIR and GIT_WORK_TREE.
+# Returns a record that unsets GIT_DIR and GIT_WORK_TREE.
 @category git
-@example "Exit context (bash)" { eval "$(imp-gits exit)" }
-@example "Exit context (nu)" { imp-gits exit | from json | load-env }
-def "main exit" []: nothing -> string {
-    let parent_shell = detect-parent-shell
-    
-    match $parent_shell {
-        "fish" => { print "set -e GIT_DIR; set -e GIT_WORK_TREE" }
-        "nu" => { print '{"GIT_DIR": null, "GIT_WORK_TREE": null}' }
-        _ => { print "unset GIT_DIR GIT_WORK_TREE" }
-    }
+@example "Exit context" { imp-gits exit | load-env }
+def "main exit" [] {
+    {GIT_DIR: null, GIT_WORK_TREE: null}
 }
 
 # List available contexts
 @category git
 @example "List contexts" { imp-gits list }
-def "main list" []: nothing -> nothing {
+def "main list" [] {
     require-config
-    let script = eval-script "use"
-    nu -c $script list
+    let config_info = get-config-info
+    let injection_names = ($config_info.injections | get name)
+    ["main (default)" ...$injection_names]
 }
 
 # Declarative sparse checkout and multi-repo workspace composition
@@ -202,36 +214,4 @@ def main [] {
     help main
 }
 
-def detect-parent-shell []: nothing -> string {
-    let processes = try { ps } catch { return "unknown" }
-    
-    let my_pid = $nu.pid
-    let my_proc = try {
-        $processes | where pid == $my_pid | first
-    } catch {
-        return "unknown"
-    }
-    
-    mut current_ppid = $my_proc.ppid?
-    mut depth = 0
-    let max_depth = 10
-    
-    while $current_ppid != null and $depth < $max_depth {
-        let parent = try {
-            $processes | where pid == $current_ppid | first
-        } catch {
-            break
-        }
-        
-        let name = $parent.name? | default ""
-        
-        if $name in ["fish", "nu", "bash", "zsh"] {
-            return $name
-        }
-        
-        $current_ppid = $parent.ppid?
-        $depth = $depth + 1
-    }
-    
-    "unknown"
-}
+
