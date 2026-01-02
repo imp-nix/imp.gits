@@ -65,10 +65,14 @@ let
   /**
     Generate boilerplate spawn script for an injection.
 
+    Supports two formats:
+    - List of entries: [ "file.nix" { src = "a"; dest = "b"; } ]
+    - Dir mapping: { dir = "boilerplate"; exclude = [ "README.md" ]; }
+
     # Arguments
 
     - `name` (string): Injection name
-    - `boilerplate` (list): List of boilerplate entries
+    - `boilerplate` (list or attrset): Boilerplate config
     - `vars` (attrset): Template variables
 
     # Returns
@@ -78,46 +82,75 @@ let
   boilerplateSpawnScript =
     name: boilerplate: vars:
     let
-      normalizeEntry =
-        entry:
-        if isString entry then
-          {
-            src = entry;
-            dest = entry;
-          }
-        else
-          {
-            inherit (entry) src;
-            dest = entry.dest or entry.src;
-          };
-
-      entries = map normalizeEntry boilerplate;
       sedCmd = templateSubstitutions vars;
       hasVars = vars != { };
 
-      perEntry =
-        entry:
+      # Script for spawning a single file (src -> dest)
+      spawnFile = src: dest: ''
+        destDir="$(dirname ${lib.escapeShellArg dest})"
+        if [ -e ${lib.escapeShellArg dest} ]; then
+          echo "    skip: ${dest} (exists)"
+        else
+          [ "$destDir" != "." ] && mkdir -p "$destDir"
+          ${gitEnv name} git show HEAD:${lib.escapeShellArg src} ${
+            if hasVars then "| ${sedCmd} " else ""
+          }> ${lib.escapeShellArg dest}
+          echo "    created: ${dest}"
+        fi
+      '';
+
+      # Handle list format
+      listScript =
         let
-          destDir = builtins.dirOf entry.dest;
+          normalizeEntry =
+            entry:
+            if isString entry then
+              {
+                src = entry;
+                dest = entry;
+              }
+            else
+              {
+                inherit (entry) src;
+                dest = entry.dest or entry.src;
+              };
+          entries = map normalizeEntry boilerplate;
+        in
+        concatStringsSep "\n" (map (e: spawnFile e.src e.dest) entries);
+
+      # Handle dir format: { dir = "boilerplate"; exclude = [...]; }
+      dirScript =
+        let
+          dir = boilerplate.dir;
+          excludes = boilerplate.exclude or [ ];
+          excludePattern =
+            if excludes == [ ] then
+              ""
+            else
+              " | grep -v " + concatStringsSep " | grep -v " (map (e: "-E ${lib.escapeShellArg e}") excludes);
         in
         ''
-          if [ -e ${lib.escapeShellArg entry.dest} ]; then
-            echo "    skip: ${entry.dest} (exists)"
-          else
-            ${if destDir != "." then "mkdir -p ${lib.escapeShellArg destDir}" else ""}
-            ${gitEnv name} git show HEAD:${lib.escapeShellArg entry.src} ${
-              if hasVars then "| ${sedCmd} " else ""
-            }> ${lib.escapeShellArg entry.dest}
-            echo "    created: ${entry.dest}"
-          fi
+          ${gitEnv name} git ls-tree -r --name-only HEAD ${lib.escapeShellArg dir} ${excludePattern} | while read -r src; do
+            dest="''${src#${lib.escapeShellArg dir}/}"
+            destDir="$(dirname "$dest")"
+            if [ -e "$dest" ]; then
+              echo "    skip: $dest (exists)"
+            else
+              [ "$destDir" != "." ] && mkdir -p "$destDir"
+              ${gitEnv name} git show "HEAD:$src" ${if hasVars then "| ${sedCmd} " else ""}> "$dest"
+              echo "    created: $dest"
+            fi
+          done
         '';
+
+      script = if isList boilerplate then listScript else dirScript;
     in
-    if boilerplate == [ ] then
+    if (isList boilerplate && boilerplate == [ ]) then
       ""
     else
       ''
         echo "  Spawning boilerplate files..."
-        ${concatStringsSep "\n" (map perEntry entries)}
+        ${script}
       '';
 
   /**
@@ -198,9 +231,9 @@ let
           sparseContent = sparseCheckoutPatterns injection;
           excludeContent = injectionExcludes injection;
           useList = injection.use or [ ];
-          boilerplate = injection.boilerplate or [ ];
+          boilerplate = injection.boilerplate or null;
           hasUse = useList != [ ];
-          hasBoilerplate = boilerplate != [ ];
+          hasBoilerplate = boilerplate != null;
           useChecks = concatStringsSep "\n" (
             map (p: ''
               tracked=$(git ls-files ${lib.escapeShellArg p} 2>/dev/null || true)
@@ -211,7 +244,12 @@ let
           );
           useSummary = if hasUse then "\n  Use: ${concatStringsSep ", " useList}" else "";
           boilerplateSummary =
-            if hasBoilerplate then "\n  Boilerplate: ${toString (length boilerplate)} file(s)" else "";
+            if !hasBoilerplate then
+              ""
+            else if isList boilerplate then
+              "\n  Boilerplate: ${toString (length boilerplate)} file(s)"
+            else
+              "\n  Boilerplate: ${boilerplate.dir}/";
         in
         ''
           echo ""
@@ -221,7 +259,7 @@ let
           if [ -d "${gitsDir}/${name}.git" ]; then
             echo "  Updating sparse-checkout..."
             ${if hasUse then sparseCheckoutSetup name sparseContent excludeContent useList else ""}
-            ${boilerplateSpawnScript name boilerplate vars}
+            ${if hasBoilerplate then boilerplateSpawnScript name boilerplate vars else ""}
             echo "  Done"
           else
             ${
@@ -241,7 +279,7 @@ let
 
             ${cloneCmd name injection}
             ${if hasUse then sparseCheckoutSetup name sparseContent excludeContent useList else ""}
-            ${boilerplateSpawnScript name boilerplate vars}
+            ${if hasBoilerplate then boilerplateSpawnScript name boilerplate vars else ""}
             echo "  Done"
           fi
         '';

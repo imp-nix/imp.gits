@@ -126,6 +126,54 @@ let
       [ "${entryPrefix}: must be a string or attrset with 'src'" ];
 
   /**
+    Validate boilerplate configuration.
+
+    Accepts either:
+    - List of entries (string or {src, dest?})
+    - Attrset with { dir, exclude? } for directory mapping
+
+    # Arguments
+
+    - `errPrefix` (string): Error message prefix
+    - `boilerplate` (list or attrset): Boilerplate configuration
+
+    # Returns
+
+    List of error strings.
+  */
+  validateBoilerplate =
+    errPrefix: boilerplate:
+    if isList boilerplate then
+      flatten (imap0 (i: e: validateBoilerplateEntry errPrefix i e) boilerplate)
+    else if isAttrs boilerplate then
+      let
+        hasDir = hasAttr "dir" boilerplate;
+      in
+      (if !hasDir then [ "${errPrefix}.boilerplate: missing 'dir'" ] else [ ])
+      ++ (
+        if hasDir && !isString boilerplate.dir then
+          [ "${errPrefix}.boilerplate.dir: must be a string" ]
+        else
+          [ ]
+      )
+      ++ (
+        if hasAttr "exclude" boilerplate && !isList boilerplate.exclude then
+          [ "${errPrefix}.boilerplate.exclude: must be a list" ]
+        else
+          [ ]
+      )
+      ++ (
+        if
+          hasAttr "exclude" boilerplate && isList boilerplate.exclude && !all isString boilerplate.exclude
+        then
+          [ "${errPrefix}.boilerplate.exclude: all entries must be strings" ]
+        else
+          [ ]
+      )
+    else
+      [ "${errPrefix}.boilerplate: must be a list or attrset with 'dir'" ];
+
+  /**
     Validate an injection configuration.
 
     # Arguments
@@ -146,12 +194,7 @@ let
       hasBoilerplate = hasAttr "boilerplate" injection;
       boilerplate = injection.boilerplate or [ ];
       boilerplateErrors =
-        if hasBoilerplate && !isList boilerplate then
-          [ "${prefix} (${name}): 'boilerplate' must be a list" ]
-        else if hasBoilerplate && isList boilerplate then
-          flatten (imap0 (i: e: validateBoilerplateEntry "${prefix} (${name})" i e) boilerplate)
-        else
-          [ ];
+        if hasBoilerplate then validateBoilerplate "${prefix} (${name})" boilerplate else [ ];
       errors =
         (if !(hasAttr "name" injection) then [ "${prefix}: missing 'name'" ] else [ ])
         ++ (

@@ -287,6 +287,41 @@ in
     ];
   };
 
+  manifest."validates boilerplate dir format" = {
+    expr =
+      (gits.validateInjection 0 {
+        name = "test";
+        remote = "git@github.com:test/repo.git";
+        boilerplate.dir = "boilerplate";
+      }).valid;
+    expected = true;
+  };
+
+  manifest."validates boilerplate dir with exclude" = {
+    expr =
+      (gits.validateInjection 0 {
+        name = "test";
+        remote = "git@github.com:test/repo.git";
+        boilerplate = {
+          dir = "boilerplate";
+          exclude = [ "README.md" ];
+        };
+      }).valid;
+    expected = true;
+  };
+
+  manifest."rejects boilerplate dir without dir field" = {
+    expr =
+      (gits.validateInjection 0 {
+        name = "test";
+        remote = "git@github.com:test/repo.git";
+        boilerplate = {
+          exclude = [ "README.md" ];
+        };
+      }).valid;
+    expected = false;
+  };
+
   manifest."validateVars accepts valid vars" = {
     expr =
       (gits.validateVars {

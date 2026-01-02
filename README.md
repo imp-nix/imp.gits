@@ -74,10 +74,18 @@ imp-gits init
       remote = "...";        # required: git remote URL
       branch = "main";       # optional: branch to track (default: main)
       use = [ "path" ... ];  # paths continuously synced from injection
-      boilerplate = [        # files spawned once, then owned by you
-        "Cargo.toml"                                     # copied as-is (with var substitution if vars defined)
-        { src = "boilerplate/flake.nix"; dest = "flake.nix"; }  # custom dest
-      ];
+
+      # Boilerplate: files spawned once, then owned by you
+      # Option 1: dir mapping (spawns all files from dir, stripping prefix)
+      boilerplate = {
+        dir = "boilerplate";     # boilerplate/* -> *
+        exclude = [ "README.md" ]; # optional exclusions
+      };
+      # Option 2: explicit list
+      # boilerplate = [
+      #   "Cargo.toml"
+      #   { src = "tmpl/flake.nix"; dest = "flake.nix"; }
+      # ];
     }
   ];
 }
@@ -225,10 +233,7 @@ Define variables in your config:
   injections = [{
     name = "rust-boilerplate";
     remote = "...";
-    boilerplate = [
-      { src = "boilerplate/flake.nix"; dest = "flake.nix"; }
-      { src = "boilerplate/Cargo.toml"; dest = "Cargo.toml"; }
-    ];
+    boilerplate.dir = "boilerplate";  # spawns boilerplate/* as *
   }];
 }
 ```
