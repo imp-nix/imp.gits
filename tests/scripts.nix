@@ -1,5 +1,5 @@
 /**
-  Tests for script generation.
+  Tests for script generation (Nushell).
 */
 {
   lib,
@@ -33,12 +33,12 @@ let
   };
 in
 {
-  scripts."initScript generates valid bash" = {
+  scripts."initScript includes run-git helper" = {
     expr =
       let
         script = gits.initScript config;
       in
-      lib.hasPrefix "#!/usr/bin/env bash" script && lib.hasInfix "set -euo pipefail" script;
+      lib.hasInfix "def run-git" script;
     expected = true;
   };
 
@@ -56,7 +56,7 @@ in
       let
         script = gits.initScript config;
       in
-      lib.hasInfix "mkdir -p .imp/gits" script;
+      lib.hasInfix "mkdir .imp/gits" script;
     expected = true;
   };
 
@@ -65,7 +65,7 @@ in
       let
         script = gits.initScript sparseConfig;
       in
-      lib.hasInfix "git sparse-checkout" script;
+      lib.hasInfix "sparse-checkout" script;
     expected = true;
   };
 
@@ -75,6 +75,24 @@ in
         script = gits.initScript combinedConfig;
       in
       lib.hasInfix "sparse-checkout" script && lib.hasInfix "git clone" script;
+    expected = true;
+  };
+
+  scripts."initScript uses complete for error handling" = {
+    expr =
+      let
+        script = gits.initScript config;
+      in
+      lib.hasInfix "| complete" script;
+    expected = true;
+  };
+
+  scripts."initScript reports clone errors" = {
+    expr =
+      let
+        script = gits.initScript config;
+      in
+      lib.hasInfix "ERROR: Failed to clone injection" script;
     expected = true;
   };
 
@@ -123,12 +141,21 @@ in
     expected = true;
   };
 
-  scripts."injectionGitWrapper uses GIT_DIR" = {
+  scripts."injectionGitWrapper uses with-env for GIT_DIR" = {
     expr =
       let
         wrapper = gits.injectionGitWrapper "test";
       in
-      lib.hasInfix "GIT_DIR=" wrapper;
+      lib.hasInfix "with-env" wrapper && lib.hasInfix "GIT_DIR" wrapper;
+    expected = true;
+  };
+
+  scripts."useScript outputs JSON for nushell" = {
+    expr =
+      let
+        script = gits.useScript config;
+      in
+      lib.hasInfix ''print $'{"GIT_DIR":'' script;
     expected = true;
   };
 }

@@ -45,7 +45,7 @@ def run-script [script_name: string, ...args: string] {
     if ($script | is-empty) {
         error make {msg: $"Error: failed to generate ($script_name) script"}
     }
-    bash -c $script -- ...$args
+    nu -c $script ...$args
 }
 
 # Initialize sparse checkout and/or injections from config
@@ -166,7 +166,7 @@ def "main use" [
     require-config
     let ctx = $context | default "main"
     let script = eval-script "use"
-    bash -c $script -- $ctx
+    nu -c $script $ctx
 }
 
 # Exit injection context
@@ -191,7 +191,7 @@ def "main exit" []: nothing -> string {
 def "main list" []: nothing -> nothing {
     require-config
     let script = eval-script "use"
-    bash -c $script -- list
+    nu -c $script list
 }
 
 # Declarative sparse checkout and multi-repo workspace composition

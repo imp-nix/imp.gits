@@ -73,7 +73,6 @@
                   lib.makeBinPath [
                     pkgs.nix
                     pkgs.git
-                    pkgs.bash
                   ]
                 }
             '';

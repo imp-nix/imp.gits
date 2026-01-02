@@ -1,5 +1,6 @@
 /**
   Git command generation for sparse checkout and multi-repo workspace.
+  Generates Nushell commands with proper error handling.
 */
 {
   lib,
@@ -7,13 +8,19 @@
 let
   inherit (lib) escapeShellArg concatStringsSep;
 
+  # Escape a string for use in Nushell (double-quoted string)
+  escapeNuStr = s: ''"${builtins.replaceStrings [ ''"'' "\\" ] [ ''\"'' "\\\\" ] s}"'';
+
+  # Format a list as a Nushell list literal
+  nuList = items: "[${concatStringsSep ", " (map escapeNuStr items)}]";
+
   /**
     Directory where injection git dirs are stored.
   */
   gitsDir = ".imp/gits";
 
   /**
-    Generate sparse checkout init command.
+    Generate sparse checkout init commands (Nushell).
 
     # Arguments
 
@@ -24,7 +31,7 @@ let
 
     # Returns
 
-    Shell command string.
+    Nushell command string.
   */
   sparseCheckoutInit =
     sparseConfig: target:
@@ -53,24 +60,18 @@ let
           userItems ++ [ ".imp" ]
         else
           userItems ++ [ "/.imp/" ];
-      itemArgs = concatStringsSep " " (map escapeShellArg items);
 
-      # Wrap commands to run in target directory if specified
-      gitCmd = if hasTarget then "git -C ${escapeShellArg target}" else "git";
+      gitArgs = if hasTarget then "-C ${escapeNuStr target}" else "";
+      modeFlag = if isCone then "--cone" else "--no-cone";
+      setFlags = if isCone then "" else "--no-cone";
     in
-    if isCone then
-      ''
-        ${gitCmd} sparse-checkout init --cone
-        ${gitCmd} sparse-checkout set ${itemArgs}
-      ''
-    else
-      ''
-        ${gitCmd} sparse-checkout init --no-cone
-        ${gitCmd} sparse-checkout set --no-cone ${itemArgs}
-      '';
+    ''
+      run-git ${gitArgs} sparse-checkout init ${modeFlag}
+      run-git ${gitArgs} sparse-checkout set ${setFlags} ...${nuList items}
+    '';
 
   /**
-    Generate sparse checkout status command.
+    Generate sparse checkout status command (Nushell).
 
     # Arguments
 
@@ -78,24 +79,21 @@ let
 
     # Returns
 
-    Shell command string.
+    Nushell command string.
   */
   sparseCheckoutStatus =
     target:
     let
-      gitCmd = if target != null then "git -C ${escapeShellArg target}" else "git";
+      gitArgs = if target != null then "-C ${escapeNuStr target}" else "";
+      label = if target != null then " (${target})" else "";
     in
     ''
-      if ${gitCmd} sparse-checkout list >/dev/null 2>&1; then
-        echo "sparse-checkout${if target != null then " (${target})" else ""}:"
-        ${gitCmd} sparse-checkout list | sed 's/^/  /'
-      fi
+      let result = (git ${gitArgs} sparse-checkout list | complete)
+      if $result.exit_code == 0 {
+          print $"sparse-checkout${label}:"
+          $result.stdout | lines | each {|line| print $"  ($line)" }
+      }
     '';
-
-  /**
-    Backwards-compatible wrapper.
-  */
-  mainSparseCheckoutStatus = sparseCheckoutStatus null;
 
   /**
     Get the git directory path for an injection.
@@ -111,7 +109,7 @@ let
   injectionGitDir = name: "${gitsDir}/${name}.git";
 
   /**
-    Generate environment prefix for injection git operations.
+    Generate with-env block for injection git operations (Nushell).
 
     # Arguments
 
@@ -119,12 +117,13 @@ let
 
     # Returns
 
-    Shell string like "GIT_DIR=.imp/gits/foo.git GIT_WORK_TREE=."
+    Nushell with-env record string.
   */
-  gitEnv = name: "GIT_DIR=${escapeShellArg (injectionGitDir name)} GIT_WORK_TREE=.";
+  gitEnvRecord = name: ''{GIT_DIR: ${escapeNuStr (injectionGitDir name)}, GIT_WORK_TREE: "."}'';
 
   /**
-    Generate clone command for an injection.
+    Generate clone command for an injection (Nushell).
+    Uses `complete` for proper error capture.
 
     # Arguments
 
@@ -133,7 +132,7 @@ let
 
     # Returns
 
-    Shell command string.
+    Nushell command string.
   */
   cloneCmd =
     name: injection:
@@ -144,22 +143,36 @@ let
       tmpDir = "${gitsDir}/tmp/${name}";
     in
     ''
-      git clone \
-        --separate-git-dir=${escapeShellArg gitDir} \
-        --branch=${escapeShellArg branch} \
-        --single-branch \
-        --no-checkout \
-        ${escapeShellArg remote} \
-        ${escapeShellArg tmpDir}
-      rm -rf ${escapeShellArg tmpDir}
-      ${gitEnv name} git config core.worktree "$(pwd)"
-      ${gitEnv name} git config core.excludesFile /dev/null
-      ${gitEnv name} git config advice.addIgnoredFile false
-      ${gitEnv name} git config advice.updateSparsePath false
+      let clone_result = (
+          git clone
+              --separate-git-dir=${escapeNuStr gitDir}
+              --branch=${escapeNuStr branch}
+              --single-branch
+              --no-checkout
+              ${escapeNuStr remote}
+              ${escapeNuStr tmpDir}
+          | complete
+      )
+      if $clone_result.exit_code != 0 {
+          print -e $"  ERROR: Failed to clone injection '${name}'"
+          print -e $"    remote: ${remote}"
+          print -e $"    branch: ${branch}"
+          if ($clone_result.stderr | is-not-empty) {
+              print -e $"    git: ($clone_result.stderr | str trim)"
+          }
+          exit 1
+      }
+      rm -rf ${escapeNuStr tmpDir}
+      with-env ${gitEnvRecord name} {
+          run-git config core.worktree (pwd | str trim)
+          run-git config core.excludesFile /dev/null
+          run-git config advice.addIgnoredFile "false"
+          run-git config advice.updateSparsePath "false"
+      }
     '';
 
   /**
-    Generate sparse-checkout setup commands.
+    Generate sparse-checkout setup commands (Nushell).
 
     # Arguments
 
@@ -170,40 +183,39 @@ let
 
     # Returns
 
-    Shell command string.
+    Nushell command string.
   */
   sparseCheckoutSetup =
     name: sparseContent: excludeContent: usePaths:
     let
       gitDir = injectionGitDir name;
-      # Build a grep pattern to match files in use paths
-      usePatterns = builtins.concatStringsSep "\\|" (map (p: "^${p}\\(/\\|$\\)") usePaths);
-      # Escape paths for shell
-      usePathsStr = concatStringsSep " " (map escapeShellArg usePaths);
     in
     ''
-      ${gitEnv name} git config core.sparseCheckout true
-      mkdir -p ${escapeShellArg gitDir}/info
-      cat > ${escapeShellArg gitDir}/info/sparse-checkout << 'SPARSE_EOF'
-      ${sparseContent}
-      SPARSE_EOF
-      cat > ${escapeShellArg gitDir}/info/exclude << 'EXCLUDE_EOF'
-      ${excludeContent}
-      EXCLUDE_EOF
+      with-env ${gitEnvRecord name} {
+          run-git config core.sparseCheckout "true"
+      }
+      mkdir ${escapeNuStr "${gitDir}/info"}
+      ${escapeNuStr sparseContent} | save -f ${escapeNuStr "${gitDir}/info/sparse-checkout"}
+      ${escapeNuStr excludeContent} | save -f ${escapeNuStr "${gitDir}/info/exclude"}
 
-      # Only checkout the specific use paths, not the entire sparse-checkout
-      # This prevents overwriting files in the worktree that aren't part of this injection
-      ${gitEnv name} git checkout HEAD -- ${usePathsStr}
+      # Checkout only the specific use paths
+      with-env ${gitEnvRecord name} {
+          run-git checkout HEAD "--" ...${nuList usePaths}
+      }
 
       # Mark files outside of use paths as assume-unchanged
-      # so git ignores changes to them in the worktree
-      ${gitEnv name} git ls-files | grep -v '${usePatterns}' | while read -r file; do
-        ${gitEnv name} git update-index --assume-unchanged "$file" 2>/dev/null || true
-      done
+      let use_paths = ${nuList usePaths}
+      with-env ${gitEnvRecord name} {
+          git ls-files | lines | where {|file|
+              not ($use_paths | any {|p| $file == $p or ($file | str starts-with $"($p)/")})
+          } | each {|file|
+              git update-index --assume-unchanged $file | complete
+          }
+      }
     '';
 
   /**
-    Generate fetch command for an injection.
+    Generate fetch command for an injection (Nushell).
 
     # Arguments
 
@@ -212,13 +224,21 @@ let
 
     # Returns
 
-    Shell command string.
+    Nushell command string.
   */
   fetchCmd =
-    name: injection: "${gitEnv name} git fetch origin ${escapeShellArg (injection.branch or "main")}";
+    name: injection:
+    let
+      branch = injection.branch or "main";
+    in
+    ''
+      with-env ${gitEnvRecord name} {
+          run-git fetch origin ${escapeNuStr branch}
+      }
+    '';
 
   /**
-    Generate pull command for an injection.
+    Generate pull command for an injection (Nushell).
 
     # Arguments
 
@@ -227,13 +247,29 @@ let
 
     # Returns
 
-    Shell command string.
+    Nushell command string.
   */
   pullCmd =
-    name: injection: "${gitEnv name} git pull origin ${escapeShellArg (injection.branch or "main")}";
+    name: injection:
+    let
+      branch = injection.branch or "main";
+    in
+    ''
+      with-env ${gitEnvRecord name} {
+          let result = (git pull origin ${escapeNuStr branch} | complete)
+          if $result.exit_code != 0 {
+              print -e $"  Warning: pull failed for ${name}"
+              if ($result.stderr | is-not-empty) {
+                  print -e $"    ($result.stderr | str trim)"
+              }
+              return false
+          }
+          true
+      }
+    '';
 
   /**
-    Generate push command for an injection.
+    Generate push command for an injection (Nushell).
 
     # Arguments
 
@@ -242,13 +278,27 @@ let
 
     # Returns
 
-    Shell command string.
+    Nushell command string.
   */
   pushCmd =
-    name: injection: "${gitEnv name} git push origin ${escapeShellArg (injection.branch or "main")}";
+    name: injection:
+    let
+      branch = injection.branch or "main";
+    in
+    ''
+      with-env ${gitEnvRecord name} {
+          let result = (git push origin ${escapeNuStr branch} | complete)
+          if $result.exit_code != 0 {
+              print -e $"  Warning: push failed for ${name}"
+              if ($result.stderr | is-not-empty) {
+                  print -e $"    ($result.stderr | str trim)"
+              }
+          }
+      }
+    '';
 
   /**
-    Generate status command for an injection.
+    Generate status command for an injection (Nushell).
 
     # Arguments
 
@@ -256,12 +306,16 @@ let
 
     # Returns
 
-    Shell command string.
+    Nushell command string.
   */
-  statusCmd = name: "${gitEnv name} git status";
+  statusCmd = name: ''
+    with-env ${gitEnvRecord name} {
+        git status
+    }
+  '';
 
   /**
-    Generate diff command for an injection.
+    Generate diff command for an injection (Nushell).
 
     # Arguments
 
@@ -269,12 +323,16 @@ let
 
     # Returns
 
-    Shell command string.
+    Nushell command string.
   */
-  diffCmd = name: "${gitEnv name} git diff";
+  diffCmd = name: ''
+    with-env ${gitEnvRecord name} {
+        git diff
+    }
+  '';
 
   /**
-    Generate add command for an injection.
+    Generate add command for an injection (Nushell).
 
     # Arguments
 
@@ -283,13 +341,16 @@ let
 
     # Returns
 
-    Shell command string.
+    Nushell command string.
   */
-  addCmd =
-    name: paths: "${gitEnv name} git add ${builtins.concatStringsSep " " (map escapeShellArg paths)}";
+  addCmd = name: paths: ''
+    with-env ${gitEnvRecord name} {
+        run-git add ...${nuList paths}
+    }
+  '';
 
   /**
-    Generate commit command for an injection.
+    Generate commit command for an injection (Nushell).
 
     # Arguments
 
@@ -298,12 +359,16 @@ let
 
     # Returns
 
-    Shell command string.
+    Nushell command string.
   */
-  commitCmd = name: message: "${gitEnv name} git commit -m ${escapeShellArg message}";
+  commitCmd = name: message: ''
+    with-env ${gitEnvRecord name} {
+        run-git commit -m ${escapeNuStr message}
+    }
+  '';
 
   /**
-    Generate log command for an injection.
+    Generate log command for an injection (Nushell).
 
     # Arguments
 
@@ -312,18 +377,24 @@ let
 
     # Returns
 
-    Shell command string.
+    Nushell command string.
   */
-  logCmd = name: args: "${gitEnv name} git log ${args}";
+  logCmd = name: args: ''
+    with-env ${gitEnvRecord name} {
+        git log ${args}
+    }
+  '';
 
 in
 {
   inherit
     gitsDir
+    escapeNuStr
+    nuList
     sparseCheckoutInit
     sparseCheckoutStatus
     injectionGitDir
-    gitEnv
+    gitEnvRecord
     cloneCmd
     sparseCheckoutSetup
     fetchCmd

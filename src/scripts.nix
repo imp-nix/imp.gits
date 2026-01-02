@@ -1,5 +1,5 @@
 /**
-  Shell script generation for sparse checkout and multi-repo workspace operations.
+  Nushell script generation for sparse checkout and multi-repo workspace operations.
 */
 {
   lib,
@@ -23,6 +23,8 @@ let
   inherit (gitignore) sparseCheckoutPatterns injectionExcludes;
   inherit (git)
     gitsDir
+    escapeNuStr
+    nuList
     sparseCheckoutInit
     sparseCheckoutStatus
     cloneCmd
@@ -31,20 +33,29 @@ let
     pullCmd
     pushCmd
     statusCmd
-    gitEnv
+    gitEnvRecord
+    injectionGitDir
     ;
 
+  # Common script header with helper functions
   scriptHeader = ''
-    #!/usr/bin/env bash
-    set -euo pipefail
+    # Helper: run git command with error handling
+    def run-git [...args: string] {
+        let result = (git ...$args | complete)
+        if $result.exit_code != 0 {
+            if ($result.stderr | is-not-empty) {
+                print -e ($result.stderr | str trim)
+            }
+            error make {msg: $"git ($args | str join ' ') failed"}
+        }
+        $result.stdout
+    }
   '';
 
   /**
-    Generate sed substitution commands for template variables.
+    Generate sed substitution for template variables (Nushell version).
 
-    Uses @var@ syntax (nix-style substituteAll convention) which is valid
-    inside string literals in both nix and toml, allowing template files
-    to keep their native extensions and be formatted normally.
+    Uses @var@ syntax for template substitution.
 
     # Arguments
 
@@ -52,22 +63,18 @@ let
 
     # Returns
 
-    Shell command string with sed expressions.
+    Nushell command string that transforms $in.
   */
   templateSubstitutions =
     vars:
     let
       varNames = attrNames vars;
-      sedExprs = map (name: "-e 's|@${name}@|${lib.escapeShellArg vars.${name}}|g'") varNames;
+      replacements = map (name: ''str replace -a "@${name}@" ${escapeNuStr vars.${name}}'') varNames;
     in
-    if varNames == [ ] then "cat" else "sed ${concatStringsSep " " sedExprs}";
+    if varNames == [ ] then "$in" else "$in | ${concatStringsSep " | " replacements}";
 
   /**
-    Generate boilerplate spawn script for an injection.
-
-    Supports two formats:
-    - List of entries: [ "file.nix" { src = "a"; dest = "b"; } ]
-    - Dir mapping: { dir = "boilerplate"; exclude = [ "README.md" ]; }
+    Generate boilerplate spawn script for an injection (Nushell).
 
     # Arguments
 
@@ -77,26 +84,29 @@ let
 
     # Returns
 
-    Shell script fragment.
+    Nushell script fragment.
   */
   boilerplateSpawnScript =
     name: boilerplate: vars:
     let
-      sedCmd = templateSubstitutions vars;
       hasVars = vars != { };
+      transform = templateSubstitutions vars;
 
       # Script for spawning a single file (src -> dest)
       spawnFile = src: dest: ''
-        destDir="$(dirname ${lib.escapeShellArg dest})"
-        if [ -e ${lib.escapeShellArg dest} ]; then
-          echo "    skip: ${dest} (exists)"
-        else
-          [ "$destDir" != "." ] && mkdir -p "$destDir"
-          ${gitEnv name} git show HEAD:${lib.escapeShellArg src} ${
-            if hasVars then "| ${sedCmd} " else ""
-          }> ${lib.escapeShellArg dest}
-          echo "    created: ${dest}"
-        fi
+        if (${escapeNuStr dest} | path exists) {
+            print $"    skip: ${dest} \(exists\)"
+        } else {
+            let dest_dir = (${escapeNuStr dest} | path dirname)
+            if $dest_dir != "." { mkdir $dest_dir }
+            with-env ${gitEnvRecord name} {
+                let content = (git show $"HEAD:${src}")
+                ${
+                  if hasVars then "${transform} | save ${escapeNuStr dest}" else "$content | save ${escapeNuStr dest}"
+                }
+            }
+            print $"    created: ${dest}"
+        }
       '';
 
       # Handle list format
@@ -123,24 +133,26 @@ let
         let
           dir = boilerplate.dir;
           excludes = boilerplate.exclude or [ ];
-          excludePattern =
-            if excludes == [ ] then
-              ""
-            else
-              " | grep -v " + concatStringsSep " | grep -v " (map (e: "-E ${lib.escapeShellArg e}") excludes);
+          excludeFilter =
+            if excludes == [ ] then "" else " | where {|f| not (${nuList excludes} | any {|ex| $f =~ $ex})}";
         in
         ''
-          ${gitEnv name} git ls-tree -r --name-only HEAD ${lib.escapeShellArg dir} ${excludePattern} | while read -r src; do
-            dest="''${src#${lib.escapeShellArg dir}/}"
-            destDir="$(dirname "$dest")"
-            if [ -e "$dest" ]; then
-              echo "    skip: $dest (exists)"
-            else
-              [ "$destDir" != "." ] && mkdir -p "$destDir"
-              ${gitEnv name} git show "HEAD:$src" ${if hasVars then "| ${sedCmd} " else ""}> "$dest"
-              echo "    created: $dest"
-            fi
-          done
+          with-env ${gitEnvRecord name} {
+              git ls-tree -r --name-only HEAD ${escapeNuStr dir}
+                  | lines${excludeFilter}
+                  | each {|src|
+                      let dest = ($src | str replace ${escapeNuStr "${dir}/"} "")
+                      if ($dest | path exists) {
+                          print $"    skip: ($dest) \(exists\)"
+                      } else {
+                          let dest_dir = ($dest | path dirname)
+                          if $dest_dir != "." { mkdir $dest_dir }
+                          let content = (git show $"HEAD:($src)")
+                          ${if hasVars then "${transform} | save $dest" else "$content | save $dest"}
+                          print $"    created: ($dest)"
+                      }
+                  }
+          }
         '';
 
       script = if isList boilerplate then listScript else dirScript;
@@ -149,12 +161,12 @@ let
       ""
     else
       ''
-        echo "  Spawning boilerplate files..."
+        print "  Spawning boilerplate files..."
         ${script}
       '';
 
   /**
-    Generate initialization script for sparse checkout and/or injections.
+    Generate initialization script for sparse checkout and/or injections (Nushell).
 
     # Arguments
 
@@ -162,7 +174,7 @@ let
 
     # Returns
 
-    Shell script string.
+    Nushell script string.
   */
   initScript =
     config:
@@ -199,12 +211,12 @@ let
       sparseSetup =
         if hasSparse then
           ''
-            echo "Setting up sparse checkout${targetLabel} (${sparseInfo.mode} mode)..."
-            echo "  ${
+            print $"Setting up sparse checkout${targetLabel} (${sparseInfo.mode} mode)..."
+            print $"  ${
               if sparseInfo.mode == "cone" then "paths" else "patterns"
             }: ${concatStringsSep ", " sparseInfo.items}"
             ${sparseCheckoutInit sparseConfig target}
-            echo "  Done"
+            print "  Done"
           ''
         else
           "";
@@ -212,14 +224,10 @@ let
       setupDir =
         if hasInjections then
           ''
-            echo ""
-            echo "Setting up injections..."
-            mkdir -p ${gitsDir}/tmp
-            cat > ${gitsDir}/.gitignore << 'EOF'
-            *
-            !.gitignore
-            !config.nix
-            EOF
+            print ""
+            print "Setting up injections..."
+            mkdir "${gitsDir}/tmp"
+            "*\n!.gitignore\n!config.nix" | save -f "${gitsDir}/.gitignore"
           ''
         else
           "";
@@ -227,69 +235,64 @@ let
       perInjection =
         injection:
         let
-          name = injection.name;
+          injName = injection.name;
           sparseContent = sparseCheckoutPatterns injection;
           excludeContent = injectionExcludes injection;
           useList = injection.use or [ ];
           boilerplate = injection.boilerplate or null;
           hasUse = useList != [ ];
           hasBoilerplate = boilerplate != null;
-          useChecks = concatStringsSep "\n" (
-            map (p: ''
-              tracked=$(git ls-files ${lib.escapeShellArg p} 2>/dev/null || true)
-              if [ -n "$tracked" ]; then
-                conflicts="$conflicts ${lib.escapeShellArg p}"
-              fi
-            '') useList
-          );
-          useSummary = if hasUse then "\n  Use: ${concatStringsSep ", " useList}" else "";
+
+          useChecks = ''
+            mut conflicts = []
+            for path in ${nuList useList} {
+                let tracked = (git ls-files $path | complete)
+                if $tracked.exit_code == 0 and ($tracked.stdout | str trim | is-not-empty) {
+                    $conflicts = ($conflicts | append $path)
+                }
+            }
+            if ($conflicts | is-not-empty) {
+                print -e $"  ERROR: Paths tracked by main repo but used by ${injName}:"
+                for c in $conflicts { print -e $"    ($c)" }
+                print -e "  Fix with: git rm --cached <path>"
+                exit 1
+            }
+          '';
+
+          useSummary = if hasUse then "\\n  Use: ${concatStringsSep ", " useList}" else "";
           boilerplateSummary =
             if !hasBoilerplate then
               ""
             else if isList boilerplate then
-              "\n  Boilerplate: ${toString (length boilerplate)} file(s)"
+              "\\n  Boilerplate: ${toString (length boilerplate)} file(s)"
             else
-              "\n  Boilerplate: ${boilerplate.dir}/";
+              "\\n  Boilerplate: ${boilerplate.dir}/";
         in
         ''
-          echo ""
-          echo "Initializing: ${name}"
-          echo "  Remote: ${injection.remote}${useSummary}${boilerplateSummary}"
+          print ""
+          print "Initializing: ${injName}"
+          print $"  Remote: ${injection.remote}${useSummary}${boilerplateSummary}"
 
-          if [ -d "${gitsDir}/${name}.git" ]; then
-            echo "  Updating sparse-checkout..."
-            ${if hasUse then sparseCheckoutSetup name sparseContent excludeContent useList else ""}
-            ${if hasBoilerplate then boilerplateSpawnScript name boilerplate vars else ""}
-            echo "  Done"
-          else
-            ${
-              if hasUse then
-                ''
-                  conflicts=""
-                  ${useChecks}
-                  if [ -n "$conflicts" ]; then
-                    echo "  ERROR: Paths tracked by main repo but used by ${name}:$conflicts"
-                    echo "  Fix with: git rm --cached <path>"
-                    exit 1
-                  fi
-                ''
-              else
-                ""
-            }
-
-            ${cloneCmd name injection}
-            ${if hasUse then sparseCheckoutSetup name sparseContent excludeContent useList else ""}
-            ${if hasBoilerplate then boilerplateSpawnScript name boilerplate vars else ""}
-            echo "  Done"
-          fi
+          if (${escapeNuStr "${gitsDir}/${injName}.git"} | path exists) {
+              print "  Updating sparse-checkout..."
+              ${if hasUse then sparseCheckoutSetup injName sparseContent excludeContent useList else ""}
+              ${if hasBoilerplate then boilerplateSpawnScript injName boilerplate vars else ""}
+              print "  Done"
+          } else {
+              ${if hasUse then useChecks else ""}
+              ${cloneCmd injName injection}
+              ${if hasUse then sparseCheckoutSetup injName sparseContent excludeContent useList else ""}
+              ${if hasBoilerplate then boilerplateSpawnScript injName boilerplate vars else ""}
+              print "  Done"
+          }
         '';
 
       injectionsBody = if hasInjections then concatStringsSep "\n" (map perInjection injections) else "";
 
       footer = ''
 
-        echo ""
-        echo "Initialized"
+        print ""
+        print "Initialized"
       '';
     in
     if !validation.valid then
@@ -298,7 +301,7 @@ let
       scriptHeader + sparseSetup + setupDir + injectionsBody + footer;
 
   /**
-    Generate pull script to update all injections from remotes.
+    Generate pull script to update all injections from remotes (Nushell).
 
     # Arguments
 
@@ -306,7 +309,7 @@ let
 
     # Returns
 
-    Shell script string.
+    Nushell script string.
   */
   pullScript =
     config:
@@ -316,32 +319,27 @@ let
       perInjection =
         injection:
         let
-          name = injection.name;
+          injName = injection.name;
           sparseContent = sparseCheckoutPatterns injection;
           excludeContent = injectionExcludes injection;
           useList = injection.use or [ ];
         in
         ''
-          echo "Pulling: ${name}"
-          if ${pullCmd name injection}; then
-            ${sparseCheckoutSetup name sparseContent excludeContent useList}
-          else
-            echo "  Warning: pull failed for ${name}"
-          fi
+          print $"Pulling: ${injName}"
+          let success = (do {
+              ${pullCmd injName injection}
+          })
+          if $success {
+              ${sparseCheckoutSetup injName sparseContent excludeContent useList}
+          }
         '';
 
       body = concatStringsSep "\n" (map perInjection injections);
     in
-    scriptHeader
-    + ''
-      ${body}
-    '';
+    scriptHeader + body;
 
   /**
-    Generate force pull script (fetch + checkout specific paths).
-
-    Only updates the paths specified in the injection's `use` list,
-    preserving any local files that aren't part of the injection.
+    Generate force pull script (fetch + checkout specific paths) (Nushell).
 
     # Arguments
 
@@ -349,7 +347,7 @@ let
 
     # Returns
 
-    Shell script string.
+    Nushell script string.
   */
   pullForceScript =
     config:
@@ -359,36 +357,28 @@ let
       perInjection =
         injection:
         let
-          name = injection.name;
+          injName = injection.name;
           branch = injection.branch or "main";
           sparseContent = sparseCheckoutPatterns injection;
           excludeContent = injectionExcludes injection;
           useList = injection.use or [ ];
-          # Escape each path for shell
-          usePaths = concatStringsSep " " (map lib.escapeShellArg useList);
         in
         ''
-          echo "Force pulling: ${name}"
-          ${fetchCmd name injection}
-
-          # Update sparse-checkout config first
-          ${sparseCheckoutSetup name sparseContent excludeContent useList}
-
-          # Force checkout only the specific paths from the injection
-          # This preserves local files that aren't part of the injection
-          ${gitEnv name} git checkout -f origin/${lib.escapeShellArg branch} -- ${usePaths}
-          echo "  Updated: ${concatStringsSep ", " useList}"
+          print $"Force pulling: ${injName}"
+          ${fetchCmd injName injection}
+          ${sparseCheckoutSetup injName sparseContent excludeContent useList}
+          with-env ${gitEnvRecord injName} {
+              run-git checkout -f $"origin/${branch}" "--" ...${nuList useList}
+          }
+          print $"  Updated: ${concatStringsSep ", " useList}"
         '';
 
       body = concatStringsSep "\n" (map perInjection injections);
     in
-    scriptHeader
-    + ''
-      ${body}
-    '';
+    scriptHeader + body;
 
   /**
-    Generate push script to push changes back to injection remotes.
+    Generate push script to push changes back to injection remotes (Nushell).
 
     # Arguments
 
@@ -396,7 +386,7 @@ let
 
     # Returns
 
-    Shell script string.
+    Nushell script string.
   */
   pushScript =
     config:
@@ -404,21 +394,21 @@ let
       injections = config.injections or [ ];
 
       perInjection = injection: ''
-        echo "Pushing: ${injection.name}"
-        ${pushCmd injection.name injection} || echo "  Warning: push failed for ${injection.name}"
+        print $"Pushing: ${injection.name}"
+        ${pushCmd injection.name injection}
       '';
 
       body = concatStringsSep "\n" (map perInjection injections);
     in
     scriptHeader
     + ''
-      echo "This will push to upstream repositories. Press Enter to continue..."
-      read -r
+      print "This will push to upstream repositories. Press Enter to continue..."
+      input
       ${body}
     '';
 
   /**
-    Generate status script showing state of sparse checkout and injections.
+    Generate status script showing state of sparse checkout and injections (Nushell).
 
     # Arguments
 
@@ -426,7 +416,7 @@ let
 
     # Returns
 
-    Shell script string.
+    Nushell script string.
   */
   statusScript =
     config:
@@ -448,31 +438,43 @@ let
         if hasSparse then
           ''
             ${sparseCheckoutStatus target}
-            echo ""
+            print ""
           ''
         else
           "";
 
       perInjection = injection: ''
-        echo "${injection.name}:"
-        echo "  remote: ${injection.remote}"
-        echo "  use: ${concatStringsSep ", " (injection.use or [ ])}"
-        ${statusCmd injection.name} 2>/dev/null | sed 's/^/  /' || echo "  (not initialized)"
-        echo ""
+        print $"${injection.name}:"
+        print $"  remote: ${injection.remote}"
+        print $"  use: ${concatStringsSep ", " (injection.use or [ ])}"
+        let status_result = (do {
+            with-env ${gitEnvRecord injection.name} {
+                git status | complete
+            }
+        })
+        if $status_result.exit_code == 0 {
+            $status_result.stdout | lines | each {|line| print $"  ($line)" }
+        } else {
+            print "  (not initialized)"
+        }
+        print ""
       '';
 
       injectionsBody = concatStringsSep "\n" (map perInjection injections);
     in
     scriptHeader
     + ''
-      echo "main:"
-      git status --short | sed 's/^/  /' || true
+      print "main:"
+      let main_status = (git status --short | complete)
+      if $main_status.exit_code == 0 {
+          $main_status.stdout | lines | each {|line| print $"  ($line)" }
+      }
       ${sparseStatus}
       ${injectionsBody}
     '';
 
   /**
-    Generate a helper script that wraps git commands for a specific injection.
+    Generate a helper script that wraps git commands for a specific injection (Nushell).
 
     # Arguments
 
@@ -480,19 +482,20 @@ let
 
     # Returns
 
-    Shell script string.
+    Nushell script string.
   */
-  injectionGitWrapper =
-    name:
-    scriptHeader
-    + ''
-      ${gitEnv name} git "$@"
-    '';
+  injectionGitWrapper = name: ''
+    def main [...args: string] {
+        with-env ${gitEnvRecord name} {
+            git ...$args
+        }
+    }
+  '';
 
   /**
-    Generate context-switching script.
+    Generate context-switching script (Nushell).
 
-    Outputs shell commands to switch git context. Wrap in eval to apply.
+    Outputs shell commands to switch git context.
 
     # Arguments
 
@@ -500,7 +503,7 @@ let
 
     # Returns
 
-    Shell script string.
+    Nushell script string.
   */
   useScript =
     config:
@@ -509,76 +512,79 @@ let
       injectionNames = map (inj: inj.name) injections;
       namesStr = concatStringsSep ", " injectionNames;
 
-      perInjectionCase = name: ''
-        ${name})
-            ABS_GIT_DIR="$PWD/${git.injectionGitDir name}"
-            case "$PARENT_SHELL" in
-              fish)
-                echo "set -gx GIT_DIR '$ABS_GIT_DIR'; set -gx GIT_WORK_TREE '$PWD'"
-                ;;
-              nu)
-                printf '{"GIT_DIR": "%s", "GIT_WORK_TREE": "%s"}\n' "$ABS_GIT_DIR" "$PWD"
-                ;;
-              *)
-                echo "export GIT_DIR='$ABS_GIT_DIR'; export GIT_WORK_TREE='$PWD'"
-                ;;
-            esac
-            ;;
+      # Detect parent shell by walking process tree
+      detectShell = ''
+        def detect-parent-shell []: nothing -> string {
+            let processes = (try { ps } catch { return "unknown" })
+            let my_pid = $nu.pid
+            let my_proc = (try { $processes | where pid == $my_pid | first } catch { return "unknown" })
+
+            mut current_ppid = $my_proc.ppid?
+            mut depth = 0
+            let max_depth = 10
+
+            while $current_ppid != null and $depth < $max_depth {
+                let parent = (try { $processes | where pid == $current_ppid | first } catch { break })
+                let name = ($parent.name? | default "")
+
+                if $name in ["fish", "nu", "bash", "zsh"] {
+                    return $name
+                }
+
+                $current_ppid = $parent.ppid?
+                $depth = $depth + 1
+            }
+
+            "unknown"
+        }
       '';
 
-      cases = concatStringsSep "\n    " (map perInjectionCase injectionNames);
+      perInjectionCase = name: ''
+        "${name}" => {
+            let abs_git_dir = $"(pwd)/${injectionGitDir name}"
+            match $parent_shell {
+                "fish" => { print $"set -gx GIT_DIR '($abs_git_dir)'; set -gx GIT_WORK_TREE '(pwd)'" }
+                "nu" => { print $'{"GIT_DIR": "($abs_git_dir)", "GIT_WORK_TREE": "(pwd)"}' }
+                _ => { print $"export GIT_DIR='($abs_git_dir)'; export GIT_WORK_TREE='(pwd)'" }
+            }
+        }
+      '';
+
+      cases = concatStringsSep "\n        " (map perInjectionCase injectionNames);
     in
-    scriptHeader
-    + ''
-      # Detect parent shell by walking up process tree
-      detect_shell() {
-        local pid=$PPID
-        while [ "$pid" != "1" ] && [ -n "$pid" ]; do
-          local comm=$(cat /proc/$pid/comm 2>/dev/null || echo "")
-          case "$comm" in
-            fish|nu|bash|zsh) echo "$comm"; return ;;
-          esac
-          pid=$(cut -d' ' -f4 /proc/$pid/stat 2>/dev/null || echo "1")
-        done
-        echo "unknown"
-      }
-      PARENT_SHELL=$(detect_shell)
+    ''
+      ${detectShell}
 
-      show_help() {
-        echo "Usage: eval \"\\\$(imp-gits use [context])\""
-        echo ""
-        echo "Contexts: main (default), ${namesStr}"
-        echo ""
-        echo "Commands: list, help"
-      }
+      def main [context?: string] {
+          let parent_shell = detect-parent-shell
+          let ctx = ($context | default "main")
 
-      case "''${1:-main}" in
-        -h|--help|help)
-          show_help
-          ;;
-        list)
-          echo "main (default)"
-          ${concatStringsSep "\n      " (map (n: ''echo "${n}"'') injectionNames)}
-          ;;
-        main)
-          case "$PARENT_SHELL" in
-            fish)
-              echo "set -e GIT_DIR; set -e GIT_WORK_TREE"
-              ;;
-            nu)
-              echo '{"GIT_DIR": null, "GIT_WORK_TREE": null}'
-              ;;
-            *)
-              echo "unset GIT_DIR GIT_WORK_TREE"
-              ;;
-          esac
-          ;;
-        ${cases}
-        *)
-          echo "echo 'Unknown: $1. Available: main, ${namesStr}' >&2"
-          echo "false"
-          ;;
-      esac
+          match $ctx {
+              "-h" | "--help" | "help" => {
+                  print 'Usage: eval "$(imp-gits use [context])"'
+                  print ""
+                  print "Contexts: main (default), ${namesStr}"
+                  print ""
+                  print "Commands: list, help"
+              }
+              "list" => {
+                  print "main (default)"
+                  ${concatStringsSep "\n            " (map (n: ''print "${n}"'') injectionNames)}
+              }
+              "main" => {
+                  match $parent_shell {
+                      "fish" => { print "set -e GIT_DIR; set -e GIT_WORK_TREE" }
+                      "nu" => { print '{"GIT_DIR": null, "GIT_WORK_TREE": null}' }
+                      _ => { print "unset GIT_DIR GIT_WORK_TREE" }
+                  }
+              }
+              ${cases}
+              _ => {
+                  print -e $"Unknown: ($ctx). Available: main, ${namesStr}"
+                  exit 1
+              }
+          }
+      }
     '';
 
 in
