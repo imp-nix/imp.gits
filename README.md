@@ -16,6 +16,15 @@ Or in a flake:
 }
 ```
 
+## Nushell setup
+
+Add this once in `config.nu`:
+
+```nu
+# Replace with your profile dir if different
+use ~/.local/state/nix/profile/lib/imp-gits *
+```
+
 ## Quick Start
 
 Create `.imp/gits/config.nix` in your repo:
@@ -38,21 +47,21 @@ Create `.imp/gits/config.nix` in your repo:
 
 Initialize:
 
-```bash
-imp-gits init
+```nu
+imp gits init
 ```
 
 ## Commands
 
 | Command                   | Description                                   |
 | ------------------------- | --------------------------------------------- |
-| `imp-gits init`           | Set up sparse checkout and/or injections      |
-| `imp-gits status`         | Show status of sparse checkout and injections |
-| `imp-gits pull [--force]` | Pull updates for all injections               |
-| `imp-gits push`           | Push changes to injection remotes             |
-| `imp-gits use <name>`     | Switch git context to an injection            |
-| `imp-gits exit`           | Exit injection context                        |
-| `imp-gits list`           | List available contexts                       |
+| `imp gits init`           | Set up sparse checkout and/or injections      |
+| `imp gits status`         | Show status of sparse checkout and injections |
+| `imp gits pull [--force]` | Pull updates for all injections               |
+| `imp gits push`           | Push changes to injection remotes             |
+| `imp gits use <name>`     | Switch git context to an injection            |
+| `imp gits exit`           | Exit injection context                        |
+| `imp gits list`           | List available contexts                       |
 
 ## Config Options
 
@@ -122,7 +131,7 @@ No-cone mode uses gitignore-style patterns for precise control. No root files ar
 }
 ```
 
-After `imp-gits init`, only matching paths will be present in your working tree.
+After `imp gits init`, only matching paths will be present in your working tree.
 
 ### External Target (for submodules)
 
@@ -168,20 +177,19 @@ workspace/
 └── tools/                   # From my-lib
 ```
 
-Switch contexts to work with injection history:
+Switch contexts to work with injection history (Nushell only):
 
-```bash
-# bash/zsh
-eval "$(imp-gits use my-lib)"
-git log                          # sees my-lib history
-eval "$(imp-gits use main)"      # switch back
+```nu
+# Add this once in config.nu (nix profile install)
+# Replace with your profile dir if different
+use ~/.local/state/nix/profile/lib/imp-gits *
 
-# fish
-eval (imp-gits use my-lib)
-eval (imp-gits exit)
+# If you're using a source checkout instead:
+# with-env { GITS_LIB: "/path/to/imp.gits/src/lib.nix" } { use /path/to/imp.gits/bin/imp-gits.nu * }
 
-# nushell
-imp-gits use my-lib | from json | load-env
+imp gits use my-lib | load-env
+git log
+imp gits use main | load-env
 ```
 
 ## Nix Library
@@ -203,7 +211,7 @@ in {
 
 ## Boilerplate Files
 
-Boilerplate files are spawned once during `imp-gits init` and then owned by your repository. Unlike `use` paths which are continuously synced, boilerplate files are only created if they don't already exist.
+Boilerplate files are spawned once during `imp gits init` and then owned by your repository. Unlike `use` paths which are continuously synced, boilerplate files are only created if they don't already exist.
 
 ### Template Substitution
 

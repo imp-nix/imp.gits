@@ -1,5 +1,11 @@
 #!/usr/bin/env nu
 # imp-gits: Declarative sparse checkout and multi-repo workspace composition
+#
+# For Nushell users who want structured output (e.g., for `use | load-env`),
+# load this module in your config.nu:
+#
+#   use /path/to/imp-gits.nu *
+#   imp gits use rust-boilerplate | load-env
 
 const GITS_DIR = ".imp/gits"
 const CONFIG_FILE = ".imp/gits/config.nix"
@@ -23,13 +29,18 @@ def require-git [] {
 
 def eval-script [script_name: string]: nothing -> string {
     let lib_path = gits-lib
-    let expr = $"
-        let
-          lib = import <nixpkgs/lib>;
-          gits = import ($lib_path) { inherit lib; };
-          config = import ./($CONFIG_FILE);
-        in \(gits.build config\).scripts.($script_name)
-    "
+    let expr_template = [
+        'let'
+        '  lib = import <nixpkgs/lib>;'
+        '  gits = import (builtins.toPath "__LIB__") { inherit lib; };'
+        '  config = import ./__CONFIG__;'
+        'in (gits.build config).scripts.__SCRIPT__'
+    ] | str join "\n"
+    let expr = ($expr_template
+        | str replace "__LIB__" $lib_path
+        | str replace "__CONFIG__" $CONFIG_FILE
+        | str replace "__SCRIPT__" $script_name
+    )
     
     let result = nix-instantiate --eval --strict --json -E $expr | complete
     
@@ -102,22 +113,26 @@ def "main status" [
 
 def get-config-info [] {
     let lib_path = gits-lib
-    let expr = $"
-        let
-          lib = import <nixpkgs/lib>;
-          gits = import ($lib_path) { inherit lib; };
-          config = import ./($CONFIG_FILE);
-          result = gits.build config;
-        in {
-          sparse = result.sparse;
-          injections = builtins.map \(inj: {
-            name = inj.name;
-            remote = inj.remote;
-            branch = inj.branch or \"main\";
-            use = inj.use or [];
-          }\) \(config.injections or []\);
-        }
-    "
+    let expr_template = [
+        'let'
+        '  lib = import <nixpkgs/lib>;'
+        '  gits = import (builtins.toPath "__LIB__") { inherit lib; };'
+        '  config = import ./__CONFIG__;'
+        '  result = gits.build config;'
+        'in {'
+        '  sparse = result.sparse;'
+        '  injections = builtins.map (inj: {'
+        '    name = inj.name;'
+        '    remote = inj.remote;'
+        '    branch = inj.branch or "main";'
+        '    use = inj.use or [];'
+        '  }) (config.injections or []);'
+        '}'
+    ] | str join "\n"
+    let expr = ($expr_template
+        | str replace "__LIB__" $lib_path
+        | str replace "__CONFIG__" $CONFIG_FILE
+    )
     
     let result = nix-instantiate --eval --strict --json -E $expr | complete
     
@@ -126,6 +141,77 @@ def get-config-info [] {
     }
     
     $result.stdout | str trim | from json
+}
+
+def gits-use [
+    context?: string  # Injection name or 'main' (default: main)
+    --list (-l)       # List available contexts
+] {
+    require-config
+    let config_info = get-config-info
+    let injection_names = ($config_info.injections | get name)
+
+    if $list {
+        ["main" ...$injection_names]
+    } else {
+        let ctx = $context | default "main"
+        let cwd = pwd
+
+        if $ctx == "main" {
+            {GIT_DIR: null, GIT_WORK_TREE: null}
+        } else if $ctx in $injection_names {
+            let abs_git_dir = [$cwd ".imp" "gits" $"($ctx).git"] | path join
+            {GIT_DIR: $abs_git_dir, GIT_WORK_TREE: $cwd}
+        } else {
+            error make {msg: $"Unknown context: ($ctx). Available: main, ($injection_names | str join ', ')"}
+        }
+    }
+}
+
+def gits-exit [] {
+    {GIT_DIR: null, GIT_WORK_TREE: null}
+}
+
+def gits-list [] {
+    require-config
+    let config_info = get-config-info
+    let injection_names = ($config_info.injections | get name)
+    ["main (default)" ...$injection_names]
+}
+
+export def "imp gits init" [] {
+    main init
+}
+
+export def "imp gits status" [
+    --structured (-s)  # Output as structured data (requires gstat plugin)
+] {
+    main status --structured=$structured
+}
+
+export def "imp gits pull" [
+    --force (-f)  # Reset to remote state
+] {
+    main pull --force=$force
+}
+
+export def "imp gits push" [] {
+    main push
+}
+
+export def "imp gits use" [
+    context?: string  # Injection name or 'main' (default: main)
+    --list (-l)       # List available contexts
+] {
+    gits-use $context --list=$list
+}
+
+export def "imp gits exit" [] {
+    gits-exit
+}
+
+export def "imp gits list" [] {
+    gits-list
 }
 
 # Pull updates for all injections
@@ -164,27 +250,7 @@ def "main use" [
     context?: string  # Injection name or 'main' (default: main)
     --list (-l)       # List available contexts
 ] {
-    require-config
-    let config_info = get-config-info
-    let injection_names = ($config_info.injections | get name)
-    
-    if $list {
-        ["main" ...$injection_names] | to nuon
-    } else {
-        let ctx = $context | default "main"
-        let cwd = pwd
-        
-        let result = if $ctx == "main" {
-            {GIT_DIR: null, GIT_WORK_TREE: null}
-        } else if $ctx in $injection_names {
-            let abs_git_dir = [$cwd ".imp" "gits" $"($ctx).git"] | path join
-            {GIT_DIR: $abs_git_dir, GIT_WORK_TREE: $cwd}
-        } else {
-            error make {msg: $"Unknown context: ($ctx). Available: main, ($injection_names | str join ', ')"}
-        }
-        
-        $result | to nuon
-    }
+    gits-use $context --list=$list | to nuon
 }
 
 # Exit injection context (alias for `use main`)
@@ -193,17 +259,14 @@ def "main use" [
 @category git
 @example "Exit context" { imp-gits exit | load-env }
 def "main exit" [] {
-    {GIT_DIR: null, GIT_WORK_TREE: null} | to nuon
+    gits-exit | to nuon
 }
 
 # List available contexts
 @category git
 @example "List contexts" { imp-gits list }
 def "main list" [] {
-    require-config
-    let config_info = get-config-info
-    let injection_names = ($config_info.injections | get name)
-    ["main (default)" ...$injection_names] | to nuon
+    gits-list | to nuon
 }
 
 # Declarative sparse checkout and multi-repo workspace composition

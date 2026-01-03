@@ -50,36 +50,17 @@
             version = "0.3.0";
             src = ./.;
 
-            nativeBuildInputs = [ pkgs.makeWrapper ];
-
             installPhase = ''
-              mkdir -p $out/bin $out/lib
+              mkdir -p $out/lib
               cp -r src $out/lib/
 
-              # Install the Nu script (named without .nu so help shows "imp-gits" not "imp-gits.nu")
+              # Install the Nu module (named without .nu so use can reference imp-gits)
               substitute bin/imp-gits.nu $out/lib/imp-gits \
                 --replace '@gitsLib@' "$out/lib/src/lib.nix"
-
-              # Use system nushell (not pinned) so plugins match user's version
-              cat > $out/bin/imp-gits <<EOF
-              #!${pkgs.bash}/bin/bash
-              exec nu "$out/lib/imp-gits" "\$@"
-              EOF
-              chmod +x $out/bin/imp-gits
-
-              wrapProgram $out/bin/imp-gits \
-                --set GITS_LIB "$out/lib/src/lib.nix" \
-                --prefix PATH : ${
-                  lib.makeBinPath [
-                    pkgs.nix
-                    pkgs.git
-                  ]
-                }
             '';
 
             meta = {
               description = "Declarative sparse checkout and multi-repo workspace composition";
-              mainProgram = "imp-gits";
             };
           };
         }
