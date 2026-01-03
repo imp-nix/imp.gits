@@ -210,7 +210,7 @@ let
               not ($use_paths | any {|p| $file == $p or ($file | str starts-with $"($p)/")})
           } | each {|file|
               git update-index --assume-unchanged $file | complete
-          }
+          } | ignore
       }
     '';
 
