@@ -158,9 +158,16 @@ def gits-use [
         let cwd = pwd
 
         if $ctx == "main" {
+            if ($env.GIT_DIR? | is-not-empty) {
+                print -e $"(ansi cyan)git context: main(ansi reset)"
+            }
             {GIT_DIR: null, GIT_WORK_TREE: null}
         } else if $ctx in $injection_names {
             let abs_git_dir = [$cwd ".imp" "gits" $"($ctx).git"] | path join
+            let inj = ($config_info.injections | where name == $ctx | first)
+            let use_paths = ($inj.use | str join ", ")
+            print -e $"(ansi yellow_bold)git context: ($ctx)(ansi reset) (ansi dark_gray)[($use_paths)](ansi reset)"
+            print -e $"(ansi dark_gray)  git commands now target injection, not main repo(ansi reset)"
             {GIT_DIR: $abs_git_dir, GIT_WORK_TREE: $cwd}
         } else {
             error make {msg: $"Unknown context: ($ctx). Available: main, ($injection_names | str join ', ')"}
