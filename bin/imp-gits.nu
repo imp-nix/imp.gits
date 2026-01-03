@@ -179,6 +179,11 @@ def gits-list [] {
     ["main (default)" ...$injection_names]
 }
 
+# Declarative sparse checkout and multi-repo workspace composition
+export def "imp gits" [] {
+    help imp gits
+}
+
 export def "imp gits init" [] {
     main init
 }
