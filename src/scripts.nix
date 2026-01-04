@@ -40,7 +40,7 @@ let
   # Common script header with helper functions
   scriptHeader = ''
     # Helper: run git command with error handling
-    def run-git [...args: string] {
+    def --wrapped run-git [...args: string] {
         let result = (git ...$args | complete)
         if $result.exit_code != 0 {
             if ($result.stderr | is-not-empty) {
@@ -211,7 +211,7 @@ let
       sparseSetup =
         if hasSparse then
           ''
-            print $"Setting up sparse checkout${targetLabel} (${sparseInfo.mode} mode)..."
+            print $"Setting up sparse checkout${targetLabel} [${sparseInfo.mode} mode]..."
             print $"  ${
               if sparseInfo.mode == "cone" then "paths" else "patterns"
             }: ${concatStringsSep ", " sparseInfo.items}"
